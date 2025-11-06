@@ -510,25 +510,25 @@ function setKendoLicense() {
           } else {
             console.error('[TLM][Safari Mobile] ❌ Popup authentication failed (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ')');
             this._authenticationInProgress = false;
-            
+
             // Show notification if max attempts reached
             if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
               console.log('[TLM][Safari Mobile] ⚠️ Max attempts reached - showing setup notification');
               this._showSafariMobileSetupNotification();
             }
-            
+
             return null;
           }
         } catch (error) {
           console.error('[TLM][Safari Mobile] ❌ Authentication error (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + '):', error);
           this._authenticationInProgress = false;
-          
+
           // Show notification if max attempts reached
           if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
             console.log('[TLM][Safari Mobile] ⚠️ Max attempts reached - showing setup notification');
             this._showSafariMobileSetupNotification();
           }
-          
+
           return null;
         }
       }
@@ -594,7 +594,6 @@ function setKendoLicense() {
     },
 
     acquireTokenWithFallback: async function (options = {}) {
-      debugger;
       const now = Date.now();
 
       if (this.isLoopDetected()) {
@@ -639,7 +638,6 @@ function setKendoLicense() {
         // === Desktop & Non-Safari Mobile: Unified 3-Tier Fallback Strategy ===
         console.log(`[TLM] ${deviceType} - using unified 3-tier fallback strategy`);
 
-        debugger;
         // 🔵 TIER 1: acquireTokenSilent (cache) - Desktop & Non-Safari Mobile
         console.log(`[TLM] ${deviceType}: Trying TIER 1 - acquireTokenSilent (cache)`);
         const silentResult = await this.performAcquireTokenSilent(options);
@@ -656,7 +654,6 @@ function setKendoLicense() {
           return silentResult;
         }
 
-        debugger;
         // 🔵 TIER 2: ssoSilent (M365 session) - Desktop & Non-Safari Mobile
         console.log(`[TLM] ${deviceType}: TIER 1 failed, trying TIER 2 - ssoSilent (M365 session)`);
 
@@ -679,7 +676,6 @@ function setKendoLicense() {
           console.log(`[TLM] ${deviceType}: TIER 2 (ssoSilent) failed:`, ssoError.message || ssoError.errorCode);
         }
 
-        debugger;
         // 🔵 TIER 3: Interactive (redirect/popup) - Desktop & Non-Safari Mobile
         console.log(`[TLM] ${deviceType}: TIER 1 & 2 failed, using TIER 3 - Interactive auth`);
 
@@ -767,7 +763,6 @@ function setKendoLicense() {
     // acquireTokenWithFallback: async function (options = {}) {
     // Enhanced acquireTokenSilent with Account Management
     performAcquireTokenSilent: async function (options = {}) {
-      debugger;
       if (this._acquireTokenSilentInProgress && this._acquireTokenSilentPromise) {
         console.log('[TLM] acquireTokenSilent already in progress, waiting...');
         return this._acquireTokenSilentPromise;
@@ -1192,7 +1187,13 @@ function setKendoLicense() {
     _handleFirstTimeAuthentication: async function () {
       console.log('[TLM] Handling first-time authentication...');
 
-      debugger;
+      // 🚫 Safari Mobile: ไม่ควรมาถึงที่นี่ เพราะใช้ popup เท่านั้น
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ Should not reach _handleFirstTimeAuthentication - Safari Mobile uses POPUP only');
+        // แสดง notification แทนการทำ redirect
+        this._showSafariMobileSetupNotification();
+        return false;
+      }
 
       // ป้องกันการเรียก authentication หลายครั้งพร้อมกัน
       if (this._authenticationInProgress) {
@@ -1262,8 +1263,6 @@ function setKendoLicense() {
             console.log('[TLM] iOS Safari - using query response mode');
           }
 
-
-          debugger;
           try {
             console.log('[TLM] Mobile: Starting loginRedirect...');
             await this.msalInstance.loginRedirect(loginRequest);
@@ -1289,8 +1288,6 @@ function setKendoLicense() {
           }
         }
 
-
-        debugger;
         // === Desktop Handling ===
         console.log('[TLM] Desktop device - using standard authentication flow');
 
@@ -1406,7 +1403,7 @@ function setKendoLicense() {
      */
     _showSafariMobileSetupNotification: function () {
       console.log('[TLM][Safari Mobile] 📢 _showSafariMobileSetupNotification called');
-      
+
       // ตรวจสอบว่ามี notification อยู่แล้วหรือไม่
       if (document.getElementById('tlm-safari-noti')) {
         console.log('[TLM][Safari Mobile] Notification already exists, skipping');
@@ -1679,7 +1676,6 @@ function setKendoLicense() {
 
     // Enhanced Token Refresh Process
     _performEnhancedTokenRefresh: async function () {
-      debugger;
       try {
         // Initialize MSAL if needed
         if (!this._msalReady || !this.msalInstance) {
@@ -2030,7 +2026,6 @@ function setKendoLicense() {
 
     // Enhanced AJAX Call with Modern Token Management
     ajaxCall: async function (options, customCallBack) {
-      debugger;
       if (this._disposed) {
         console.warn("[TLM] Ajax call attempted on disposed instance");
         return;
@@ -2055,7 +2050,6 @@ function setKendoLicense() {
 
           // Safari Mobile: หลัง redirect localStorage อาจเป็น null แต่ MSAL cache มี account
           // ต้องดึง token จาก MSAL cache
-          debugger;
           if (accounts.length > 0 && (!cachedToken || !this.azureToken)) {
             console.log("[TLM] Safari Mobile: Recovering token from MSAL cache after redirect");
             const tokenResult = await this.acquireTokenWithFallback();
