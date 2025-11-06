@@ -744,13 +744,21 @@ function setKendoLicense() {
 
       try {
         const isSafariMobile = this._isIOSSafari();
+
+        // 🚫 Safari Mobile: ไม่ทำ redirect - ใช้ popup เท่านั้น
+        if (isSafariMobile) {
+          console.log('[TLM][Safari Mobile] ⚠️ _handleMobileLogin blocked - Safari Mobile uses POPUP only, no redirect');
+          this._showSafariMobileSetupNotification();
+          return;
+        }
+
+        // Non-Safari Mobile: ทำ redirect ได้
         const loginRequest = {
           scopes: this._scopes,
           redirectUri: this.dynamicRedirectUri,
           authority: `https://login.microsoftonline.com/${this.tenantID}`,
           prompt: "select_account",
-          // Mobile-specific parameters
-          responseMode: isSafariMobile ? 'query' : 'fragment', // Safari Mobile ใช้ query
+          responseMode: 'fragment',
           state: kendo.guid()
         };
 
@@ -1737,6 +1745,13 @@ function setKendoLicense() {
     // Enhanced Force Login with Better Error Handling
     _forceLogin: async function () {
       console.log("[TLM] Forcing login...");
+
+      // 🚫 Safari Mobile: ไม่ทำ redirect - แสดง notification
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ _forceLogin blocked - Safari Mobile uses POPUP only');
+        this._showSafariMobileSetupNotification();
+        return false;
+      }
 
       // Check for previous AAD loop detection
       if (this.isLoopDetected()) {
