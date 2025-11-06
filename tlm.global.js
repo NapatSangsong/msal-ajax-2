@@ -2083,6 +2083,20 @@ function setKendoLicense() {
             }
           } else if (accounts.length === 0 && (!cachedToken || parseInt(tokenExpiry) <= now)) {
             console.log("[TLM] No accounts and no valid token, attempting enhanced token acquisition...");
+
+            // 🚫 Safari Mobile: ไม่พยายาม acquire token - แสดง notification แล้วหยุด
+            if (this._isIOSSafari()) {
+              console.log('[TLM][Safari Mobile] ⚠️ No token - showing notification and stopping');
+              this._showSafariMobileSetupNotification();
+              if (_options.error) {
+                _options.error({
+                  status: 401,
+                  responseText: JSON.stringify({ error: "Authentication Required" })
+                });
+              }
+              return;
+            }
+
             const tokenResult = await this.acquireTokenWithFallback();
 
             if (tokenResult && tokenResult.accessToken) {
@@ -2100,6 +2114,20 @@ function setKendoLicense() {
 
       if (!currentCachedToken || !currentTokenExpiry || parseInt(currentTokenExpiry) <= now) {
         console.log("[TLM] Token expired or missing, validating...");
+
+        // 🚫 Safari Mobile: ไม่พยายาม refresh token - แสดง notification แล้วหยุด
+        if (this._isIOSSafari()) {
+          console.log('[TLM][Safari Mobile] ⚠️ Token expired/missing - showing notification and stopping');
+          this._showSafariMobileSetupNotification();
+          if (_options.error) {
+            _options.error({
+              status: 401,
+              responseText: JSON.stringify({ error: "Authentication Required" })
+            });
+          }
+          return;
+        }
+
         const tokenValid = await this.validateAndRefreshToken();
         if (!tokenValid) {
           console.warn("[TLM] Token validation failed");
@@ -2196,6 +2224,10 @@ function setKendoLicense() {
           if (this._isIOSSafari() && !tokenStatus.valid) {
             console.log('[TLM][Token Checker] Safari Mobile detected with invalid token - showing notification');
             this._showSafariMobileSetupNotification();
+            // หยุด token checker สำหรับ Safari Mobile ที่ไม่มี token
+            console.log('[TLM][Safari Mobile] Stopping token checker - no token');
+            clearInterval(this._autoTokenChecker);
+            return;
           }
           // ✅ Safari Mobile: ซ่อน notification ถ้ามี token แล้ว
           else if (this._isIOSSafari() && tokenStatus.valid) {
@@ -2209,7 +2241,13 @@ function setKendoLicense() {
             return;
           }
 
-          // Smart refresh logic - only refresh if less than threshold but not expired
+          // 🚫 Safari Mobile: ไม่ทำ token refresh - ใช้ popup เท่านั้น
+          if (this._isIOSSafari()) {
+            console.log('[TLM][Safari Mobile] Skipping auto token refresh - popup authentication only');
+            return;
+          }
+
+          // Smart refresh logic - only refresh if less than threshold but not expired (Non-Safari Mobile only)
           if (tokenStatus.minutesLeft < this.TOKEN_REFRESH_THRESHOLD_MINUTES &&
             tokenStatus.minutesLeft > 0) {
             if (!this._tokenRefreshInProgress) {
