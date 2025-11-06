@@ -1343,54 +1343,36 @@ function setKendoLicense() {
     _safariMobilePopupAuth: async function () {
       console.log('[TLM][Safari Mobile] 🚀 Starting popup authentication (NO RELOAD mode)...');
 
-      // ✅ STEP 1: Test popup blocker and show guidance if blocked
-      const popupAllowed = await this._testPopupAndShowGuidance();
-      if (!popupAllowed) {
-        console.warn('[TLM][Safari Mobile] ⚠️ Popup blocked - user needs to enable popups first');
-        return false;
-      }
+      // ✅ ลบการ test popup เพราะทำให้เกิด popup alert 2 ครั้ง
+      // ให้ MSAL จัดการ popup error โดยตรง แล้วแสดง guidance ถ้า block
 
-      // ✅ STEP 2: Popup allowed - proceed with authentication (NO RELOAD)
-      return await this._performSafariPopupLogin();
-    },
+      try {
+        // ✅ พยายาม authenticate ด้วย popup ทันที
+        return await this._performSafariPopupLogin();
+      } catch (error) {
+        // ถ้า popup ถูก block จะเข้า catch นี้
+        if (error.errorCode === 'popup_window_error' ||
+          (error.message && error.message.includes('popup'))) {
 
-    /**
-     * Test if popup is allowed and show guidance if blocked
-     * LOOPS until popup is allowed or user gives up
-     * Returns Promise<boolean> - true if popup allowed, false if user gave up
-     */
-    _testPopupAndShowGuidance: async function () {
-      // Test popup ONCE initially
-      console.log('[TLM] Testing popup blocker...');
+          console.warn('[TLM][Safari Mobile] ⚠️ Popup blocked - showing guidance');
 
-      const testPopup = window.open('', '_blank', 'width=1,height=1');
+          // Set flag to prevent duplicate attempts
+          this._showingPopupGuidance = true;
 
-      if (!testPopup || testPopup.closed || typeof testPopup.closed === 'undefined') {
-        // Popup was blocked - show guidance with checkbox
-        console.warn('[TLM] ⚠️ Popup blocked! Showing guidance to user...');
+          // Show guidance modal
+          await this._showPopupBlockerGuidance();
 
-        if (testPopup) {
-          testPopup.close();
+          // Clear flag
+          this._showingPopupGuidance = false;
+
+          // ลองอีกครั้งหลังจากผู้ใช้ตั้งค่าแล้ว
+          console.log('[TLM][Safari Mobile] 🔄 Retrying authentication after guidance');
+          return await this._performSafariPopupLogin();
         }
 
-        // Set flag to prevent other authentication attempts
-        this._showingPopupGuidance = true;
-
-        // Show guidance modal - user must confirm they fixed settings
-        await this._showPopupBlockerGuidance();
-
-        // Clear flag after user confirms
-        this._showingPopupGuidance = false;
-
-        // User confirmed they fixed settings - trust them and proceed
-        console.log('[TLM] ✅ User confirmed settings fixed - proceeding with authentication');
-        return true;
+        // Error อื่นๆ
+        throw error;
       }
-
-      // Popup was allowed from the start
-      testPopup.close();
-      console.log('[TLM] ✅ Popup allowed - proceeding with authentication');
-      return true;
     },
 
     /**
