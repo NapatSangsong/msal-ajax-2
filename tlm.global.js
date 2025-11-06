@@ -1248,6 +1248,12 @@ function setKendoLicense() {
 
             // Fallback สำหรับ mobile: redirect ไป home page
             this._showMobileAuthDialog();
+            
+            // ⚠️ แสดง Safari notification ถ้าเป็น Safari Mobile
+            if (this._isIOSSafari()) {
+              this._showSafariMobileSetupNotification();
+            }
+            
             return false;
           }
         }
@@ -1364,6 +1370,94 @@ function setKendoLicense() {
     },
 
     /**
+     * Show Safari Mobile Setup Notification (Minimal UI)
+     * แสดงเฉพาะเมื่อไม่มี token บน Safari Mobile
+     */
+    _showSafariMobileSetupNotification: function () {
+      // ตรวจสอบว่ามี notification อยู่แล้วหรือไม่
+      if (document.getElementById('tlm-safari-noti')) {
+        return; // มีอยู่แล้ว ไม่ต้องสร้างใหม่
+      }
+
+      const noti = document.createElement('div');
+      noti.id = 'tlm-safari-noti';
+      noti.style.cssText = `
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #fff;
+        border: 2px solid #d83b01;
+        border-radius: 8px;
+        padding: 12px 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 999999;
+        max-width: 90%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 14px;
+        animation: slideDown 0.3s ease-out;
+      `;
+
+      noti.innerHTML = `
+        <style>
+          @keyframes slideDown {
+            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+          }
+        </style>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="font-size: 20px;">⚙️</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #323130; margin-bottom: 4px;">
+              กรุณาตั้งค่า Safari
+            </div>
+            <div style="color: #605e5c; font-size: 13px;">
+              Settings → Safari → ปิด "Block Pop-ups"
+            </div>
+          </div>
+          <button id="tlm-safari-refresh-btn" style="
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+          ">
+            🔄 Refresh
+          </button>
+        </div>
+      `;
+
+      document.body.appendChild(noti);
+
+      // Refresh button handler
+      document.getElementById('tlm-safari-refresh-btn').addEventListener('click', () => {
+        console.log('[TLM] Safari notification: Refresh clicked');
+        location.reload();
+      });
+
+      console.log('[TLM] Safari Mobile setup notification displayed');
+    },
+
+    /**
+     * Hide Safari Mobile Setup Notification
+     * ซ่อนเมื่อได้ token แล้ว
+     */
+    _hideSafariMobileSetupNotification: function () {
+      const noti = document.getElementById('tlm-safari-noti');
+      if (noti) {
+        noti.style.animation = 'slideUp 0.3s ease-out';
+        setTimeout(() => {
+          noti.remove();
+          console.log('[TLM] Safari Mobile setup notification hidden');
+        }, 300);
+      }
+    },
+
+    /**
      * Perform popup authentication for Safari Mobile (NO RELOAD)
      * Returns Promise<boolean> - true if successful, false if failed
      */
@@ -1445,6 +1539,9 @@ function setKendoLicense() {
           // Dispatch event
           window.dispatchEvent(new CustomEvent('tlm_token_ready'));
           console.log('[TLM][Safari Mobile] 📢 Token ready event dispatched');
+
+          // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
+          this._hideSafariMobileSetupNotification();
 
           // Update status
           if (this.checkCurrentTokenStatus) {
@@ -2025,6 +2122,15 @@ function setKendoLicense() {
 
           // Enhanced token status check
           const tokenStatus = this.checkCurrentTokenStatus();
+
+          // ⚠️ Safari Mobile: แสดง notification ถ้าไม่มี token
+          if (this._isIOSSafari() && !tokenStatus.valid) {
+            this._showSafariMobileSetupNotification();
+          }
+          // ✅ Safari Mobile: ซ่อน notification ถ้ามี token แล้ว
+          else if (this._isIOSSafari() && tokenStatus.valid) {
+            this._hideSafariMobileSetupNotification();
+          }
 
           if (!tokenStatus.valid) {
             console.log('[TLM] Token invalid, stopping auto checker');
