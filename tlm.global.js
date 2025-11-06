@@ -485,14 +485,19 @@ function setKendoLicense() {
         }
 
         // 🚫 Check max popup attempts - prevent infinite loop
+        // Load from localStorage to persist across page reloads
+        const storedAttempts = parseInt(localStorage.getItem('tlm_safari_popup_attempts') || '0');
+        this._safariPopupAttempts = storedAttempts;
+
         if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
           console.log('[TLM][Safari Mobile] ⚠️ Max popup attempts reached (' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ') - showing notification');
           this._showSafariMobileSetupNotification();
           return null;
         }
 
-        // Increment attempt counter
+        // Increment attempt counter and save to localStorage
         this._safariPopupAttempts++;
+        localStorage.setItem('tlm_safari_popup_attempts', this._safariPopupAttempts.toString());
         console.log('[TLM][Safari Mobile] 🔄 Popup attempt #' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS);
 
         this._authenticationInProgress = true;
@@ -502,8 +507,10 @@ function setKendoLicense() {
 
           if (success) {
             console.log('[TLM][Safari Mobile] ✅ Popup authentication completed - token ready');
-            // Reset counter on success
+            // Reset counter on success (both memory and localStorage)
             this._safariPopupAttempts = 0;
+            localStorage.removeItem('tlm_safari_popup_attempts');
+            console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter');
             this._authenticationInProgress = false;
             // ✅ NO RELOAD - token is ready immediately, page can continue
             return null;
@@ -1467,9 +1474,10 @@ function setKendoLicense() {
       document.body.appendChild(noti);
       console.log('[TLM][Safari Mobile] ✅ Notification element appended to body');
 
-      // Refresh button handler
+      // Refresh button handler - Reset attempts before reload
       document.getElementById('tlm-safari-refresh-btn').addEventListener('click', () => {
-        console.log('[TLM] Safari notification: Refresh clicked');
+        console.log('[TLM][Safari Mobile] Refresh clicked - resetting popup attempts counter');
+        localStorage.removeItem('tlm_safari_popup_attempts');
         location.reload();
       });
 
@@ -1557,9 +1565,10 @@ function setKendoLicense() {
         if (popupResult && popupResult.accessToken) {
           console.log('[TLM][Safari Mobile] ✅ Token acquired successfully');
 
-          // Reset popup attempt counter on success
+          // Reset popup attempt counter on success (both memory and localStorage)
           this._safariPopupAttempts = 0;
-          console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter to 0');
+          localStorage.removeItem('tlm_safari_popup_attempts');
+          console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter and cleared localStorage');
 
           // Set active account
           this.msalInstance.setActiveAccount(popupResult.account);
