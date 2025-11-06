@@ -1252,7 +1252,15 @@ function setKendoLicense() {
         if (this._isMobileDevice()) {
           console.log('[TLM] Mobile device - initiating mobile-friendly authentication');
 
-          // ตรวจสอบว่าอยู่ในกระบวนการ redirect อยู่หรือไม่
+          // 🚫 Safari Mobile: ไม่ทำ redirect - ใช้ popup เท่านั้น
+          if (this._isIOSSafari()) {
+            console.log('[TLM][Safari Mobile] ⚠️ Mobile redirect blocked - Safari Mobile uses POPUP only');
+            this._showSafariMobileSetupNotification();
+            this._authenticationInProgress = false;
+            return false;
+          }
+
+          // Non-Safari Mobile: ตรวจสอบว่าอยู่ในกระบวนการ redirect อยู่หรือไม่
           const existingIntendedUrl = localStorage.getItem('tlm_intended_url');
           if (existingIntendedUrl && existingIntendedUrl === window.location.href) {
             console.log('[TLM] Already in redirect process, waiting...');
@@ -1263,23 +1271,18 @@ function setKendoLicense() {
           localStorage.setItem('tlm_intended_url', window.location.href);
           localStorage.setItem('tlm_just_authenticated', 'true');
 
-          // สำหรับ iOS Safari ใช้ parameter พิเศษ
+          // Non-Safari Mobile: สำหรับ Android และ mobile อื่นๆ
           const loginRequest = {
             scopes: this._scopes,
             redirectUri: this.dynamicRedirectUri,
             authority: `https://login.microsoftonline.com/${this.tenantID}`,
-            prompt: "select_account"
+            prompt: "select_account",
+            responseMode: 'fragment',
+            state: kendo.guid()
           };
 
-          // เพิ่ม mobile-specific parameters
-          if (this._isIOSSafari()) {
-            loginRequest.responseMode = 'query';
-            loginRequest.state = kendo.guid();
-            console.log('[TLM] iOS Safari - using query response mode');
-          }
-
           try {
-            console.log('[TLM] Mobile: Starting loginRedirect...');
+            console.log('[TLM] Non-Safari Mobile: Starting loginRedirect...');
             await this.msalInstance.loginRedirect(loginRequest);
             return new Promise(() => { }); // Never resolve, wait for redirect
           } catch (redirectError) {
@@ -1291,14 +1294,8 @@ function setKendoLicense() {
               localStorage.setItem('tlm_aad_loop_detected', 'true');
             }
 
-            // Fallback สำหรับ mobile: redirect ไป home page
+            // Fallback สำหรับ non-Safari mobile
             this._showMobileAuthDialog();
-
-            // ⚠️ แสดง Safari notification ถ้าเป็น Safari Mobile
-            if (this._isIOSSafari()) {
-              this._showSafariMobileSetupNotification();
-            }
-
             return false;
           }
         }
@@ -2808,6 +2805,14 @@ function setKendoLicense() {
 
       // Enhanced token acquisition using modern patterns
       console.log("[TLM] Getting new token with enhanced methods...");
+
+      // Safari Mobile: STOP - no token acquisition
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ getAzureToken blocked - showing notification');
+        this._showSafariMobileSetupNotification();
+        throw new Error("Safari Mobile: Token acquisition blocked - please configure Safari settings");
+      }
+
       const tokenValid = await this.validateAndRefreshToken();
 
       if (tokenValid && this.azureToken) {
@@ -7328,6 +7333,12 @@ function setKendoLicense() {
       const minutesLeft = Math.floor(timeLeft / 60000);
 
       if (minutesLeft < this.TOKEN_REFRESH_THRESHOLD_MINUTES && minutesLeft > 0) {
+        // Safari Mobile: STOP - no auto refresh
+        if (this._isIOSSafari()) {
+          console.log('[TLM][Safari Mobile] ⚠️ Token expiry detected - skipping auto refresh');
+          return;
+        }
+
         console.log(`[TLM] Token expires in ${minutesLeft} minutes, triggering refresh`);
         this.validateAndRefreshToken().catch(error => {
           console.error('[TLM] Auto refresh failed:', error);
