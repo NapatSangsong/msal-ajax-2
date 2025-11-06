@@ -408,9 +408,9 @@ function setKendoLicense() {
     _showFullLoadingCount: 0,
     _authenticationInProgress: false,
 
-    // Safari Mobile popup attempts tracking
+    // Safari Mobile popup attempts tracking (try once only)
     _safariPopupAttempts: 0,
-    MAX_SAFARI_POPUP_ATTEMPTS: 3,
+    MAX_SAFARI_POPUP_ATTEMPTS: 1,
 
     /* ===============================================
        1.1. ENHANCED AUTHENTICATION & TOKEN MANAGEMENT
@@ -2381,10 +2381,18 @@ function setKendoLicense() {
 
           if (!hasPreviousLogin) {
             console.log('[TLM] First-time login detected.');
+
+            // 🚫 Safari Mobile: ไม่ทำ redirect - ให้ notification จัดการแทน
+            if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
+              console.log('[TLM][Safari Mobile] ⚠️ Skipping redirect - notification already shown');
+              tlm.global._handling401Error = false;
+              return;
+            }
+
             localStorage.setItem('tlm_intended_url', window.location.href);
 
             if (tlm.global.msalInstance) {
-              // Enhanced redirect attempt
+              // Enhanced redirect attempt (Desktop & Non-Safari Mobile only)
               tlm.global.msalInstance.loginRedirect({
                 scopes: tlm.global._scopes,
                 redirectUri: tlm.global.dynamicRedirectUri,
