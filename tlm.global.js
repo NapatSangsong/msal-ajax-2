@@ -1666,17 +1666,11 @@ function setKendoLicense() {
           prompt: 'select_account'
         };
 
-        console.log('[TLM][Safari Mobile] 🚀 Calling acquireTokenPopup...');
-        let popupResult;
-        try {
-          popupResult = await this.msalInstance.acquireTokenPopup(loginRequest);
-        } catch (acquireTokenError) {
-          console.error('[TLM][Safari Mobile] ❌ acquireTokenPopup error:', acquireTokenError?.message);
-
-          // Fallback to loginPopup
-          console.log('[TLM][Safari Mobile] 🔄 Trying loginPopup fallback...');
-          popupResult = await this.msalInstance.loginPopup(loginRequest);
-        }
+        // � FIX: ใช้ loginPopup โดยตรงเพื่อป้องกัน account picker ขึ้น 2 ครั้ง
+        // เมื่อผู้ใช้ clear cache, acquireTokenPopup จะ fail และ fallback ไป loginPopup
+        // ทำให้เห็น account picker 2 ครั้ง → ใช้ loginPopup เลยจะเห็นครั้งเดียว
+        console.log('[TLM][Safari Mobile] � Calling loginPopup (single account picker)...');
+        const popupResult = await this.msalInstance.loginPopup(loginRequest);
 
         if (popupResult && popupResult.accessToken) {
           console.log('[TLM][Safari Mobile] ✅ Token acquired successfully');
