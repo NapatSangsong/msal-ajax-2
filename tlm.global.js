@@ -1183,6 +1183,10 @@ function setKendoLicense() {
       if (token && expiry && parseInt(expiry) > now) {
         console.log('[TLM] Valid token found in localStorage');
         this.azureToken = token;
+
+        // ✅ Safari Mobile: ซ่อน notification ถ้ามี token อยู่แล้ว
+        this._checkAndHideSafariNotification();
+
         return true;
       }
 
@@ -1191,6 +1195,10 @@ function setKendoLicense() {
 
       if (tokenResult && tokenResult.accessToken) {
         console.log('[TLM] Initial token acquisition successful');
+
+        // ✅ Safari Mobile: ซ่อน notification เมื่อได้ token แล้ว
+        this._checkAndHideSafariNotification();
+
         return true;
       }
 
@@ -1416,10 +1424,21 @@ function setKendoLicense() {
     _showSafariMobileSetupNotification: function () {
       console.log('[TLM][Safari Mobile] 📢 _showSafariMobileSetupNotification called');
 
+      // ตรวจสอบว่ามี token อยู่แล้วหรือไม่ - ถ้ามีก็ไม่ต้องแสดง notification
+      const cachedToken = localStorage.getItem('tlm_azure_token');
+      const tokenExpiry = localStorage.getItem('tlm_token_expiry');
+      const now = Date.now();
+
+      if (cachedToken && tokenExpiry && parseInt(tokenExpiry) > now) {
+        console.log('[TLM][Safari Mobile] Token exists - hiding notification instead of showing');
+        this._hideSafariMobileSetupNotification();
+        return;
+      }
+
       // ตรวจสอบว่ามี notification อยู่แล้วหรือไม่
       if (document.getElementById('tlm-safari-noti')) {
         console.log('[TLM][Safari Mobile] Notification already exists, skipping');
-        return; // มีอยู่แล้ว ไม่ต้องสร้างใหม่
+        return;
       }
 
       console.log('[TLM][Safari Mobile] Creating notification element...');
@@ -1428,51 +1447,209 @@ function setKendoLicense() {
       noti.id = 'tlm-safari-noti';
       noti.style.cssText = `
         position: fixed;
-        top: 10px;
+        top: 50%;
         left: 50%;
-        transform: translateX(-50%);
-        background: #fff;
-        border: 2px solid #d83b01;
-        border-radius: 8px;
-        padding: 12px 16px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border: none;
+        border-radius: 16px;
+        padding: 0;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
         z-index: 999999;
-        max-width: 90%;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 14px;
-        animation: slideDown 0.3s ease-out;
+        width: 90%;
+        max-width: 400px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        overflow: hidden;
       `;
 
       noti.innerHTML = `
         <style>
-          @keyframes slideDown {
-            from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
-            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+          @keyframes slideIn {
+            from { 
+              transform: translate(-50%, -50%) scale(0.9);
+              opacity: 0;
+            }
+            to { 
+              transform: translate(-50%, -50%) scale(1);
+              opacity: 1;
+            }
+          }
+          @keyframes slideOut {
+            from { 
+              transform: translate(-50%, -50%) scale(1);
+              opacity: 1;
+            }
+            to { 
+              transform: translate(-50%, -50%) scale(0.9);
+              opacity: 0;
+            }
+          }
+          #tlm-safari-refresh-btn:active {
+            transform: scale(0.96);
           }
         </style>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 20px;">⚙️</span>
-          <div style="flex: 1;">
-            <div style="font-weight: 600; color: #323130; margin-bottom: 4px;">
-              กรุณาตั้งค่า Safari
+        
+        <!-- Header Bar -->
+        <div style="
+          background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
+          padding: 20px;
+          text-align: center;
+        ">
+          <div style="
+            font-size: 32px;
+            margin-bottom: 8px;
+          ">🔐</div>
+          <div style="
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            letter-spacing: -0.3px;
+          ">ต้องการความช่วยเหลือ</div>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 24px 20px;">
+          <div style="
+            font-size: 15px;
+            color: #323130;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            text-align: center;
+          ">
+            เพื่อให้คุณเข้าใช้งานได้<br>
+            กรุณาทำตามขั้นตอนด้านล่าง
+          </div>
+
+          <!-- Steps -->
+          <div style="
+            background: #f3f2f1;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+          ">
+            <div style="
+              font-size: 13px;
+              font-weight: 600;
+              color: #605e5c;
+              margin-bottom: 12px;
+              text-align: center;
+            ">ขั้นตอนการตั้งค่า</div>
+            
+            <div style="margin-bottom: 10px;">
+              <div style="
+                display: flex;
+                align-items: start;
+                gap: 10px;
+              ">
+                <div style="
+                  background: #0078d4;
+                  color: white;
+                  width: 22px;
+                  height: 22px;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 12px;
+                  font-weight: 700;
+                  flex-shrink: 0;
+                  margin-top: 1px;
+                ">1</div>
+                <div style="
+                  font-size: 14px;
+                  color: #323130;
+                  line-height: 1.5;
+                ">เปิด <strong>การตั้งค่า</strong> บนเครื่องของคุณ</div>
+              </div>
             </div>
-            <div style="color: #605e5c; font-size: 13px;">
-              Settings → Safari → ปิด "Block Pop-ups"
+
+            <div style="margin-bottom: 10px;">
+              <div style="
+                display: flex;
+                align-items: start;
+                gap: 10px;
+              ">
+                <div style="
+                  background: #0078d4;
+                  color: white;
+                  width: 22px;
+                  height: 22px;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 12px;
+                  font-weight: 700;
+                  flex-shrink: 0;
+                  margin-top: 1px;
+                ">2</div>
+                <div style="
+                  font-size: 14px;
+                  color: #323130;
+                  line-height: 1.5;
+                ">เลือก <strong>Safari</strong></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="
+                display: flex;
+                align-items: start;
+                gap: 10px;
+              ">
+                <div style="
+                  background: #0078d4;
+                  color: white;
+                  width: 22px;
+                  height: 22px;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 12px;
+                  font-weight: 700;
+                  flex-shrink: 0;
+                  margin-top: 1px;
+                ">3</div>
+                <div style="
+                  font-size: 14px;
+                  color: #323130;
+                  line-height: 1.5;
+                "><strong>ปิด</strong> การบล็อกหน้าต่างป๊อปอัพ<br>
+                <span style="font-size: 13px; color: #605e5c;">(Block Pop-ups)</span></div>
+              </div>
             </div>
           </div>
+
+          <!-- Action Button -->
           <button id="tlm-safari-refresh-btn" style="
-            background: #0078d4;
+            width: 100%;
+            background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 13px;
+            padding: 14px 24px;
+            border-radius: 10px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            white-space: nowrap;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+            letter-spacing: -0.2px;
           ">
-            🔄 Refresh
+            ตั้งค่าเรียบร้อยแล้ว กดเพื่อเข้าสู่ระบบ
           </button>
+
+          <div style="
+            margin-top: 16px;
+            text-align: center;
+            font-size: 12px;
+            color: #8a8886;
+            line-height: 1.4;
+          ">
+            หลังจากตั้งค่าเรียบร้อย กดปุ่มด้านบน<br>
+            ระบบจะนำคุณไปยังหน้าเข้าสู่ระบบ
+          </div>
         </div>
       `;
 
@@ -1483,7 +1660,15 @@ function setKendoLicense() {
       document.getElementById('tlm-safari-refresh-btn').addEventListener('click', () => {
         console.log('[TLM][Safari Mobile] Refresh clicked - resetting popup attempts counter');
         localStorage.removeItem('tlm_safari_popup_attempts');
-        location.reload();
+
+        // เพิ่ม visual feedback
+        const btn = document.getElementById('tlm-safari-refresh-btn');
+        btn.innerHTML = 'กำลังเข้าสู่ระบบ...';
+        btn.style.opacity = '0.7';
+
+        setTimeout(() => {
+          location.reload();
+        }, 300);
       });
 
       console.log('[TLM][Safari Mobile] 📢 Safari Mobile setup notification displayed successfully');
@@ -1498,13 +1683,36 @@ function setKendoLicense() {
       const noti = document.getElementById('tlm-safari-noti');
       if (noti) {
         console.log('[TLM][Safari Mobile] Found notification element, removing...');
-        noti.style.animation = 'slideUp 0.3s ease-out';
+        noti.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => {
           noti.remove();
           console.log('[TLM][Safari Mobile] ✅ Safari Mobile setup notification hidden');
         }, 300);
       } else {
         console.log('[TLM][Safari Mobile] No notification element found to hide');
+      }
+    },
+
+    /**
+     * Check and hide Safari Mobile notification if token exists
+     * เรียกใช้เมื่อ page load หรือเมื่อได้ token
+     */
+    _checkAndHideSafariNotification: function () {
+      if (!this._isIOSSafari()) {
+        return; // ไม่ใช่ Safari Mobile ไม่ต้องทำอะไร
+      }
+
+      const cachedToken = localStorage.getItem('tlm_azure_token');
+      const tokenExpiry = localStorage.getItem('tlm_token_expiry');
+      const now = Date.now();
+
+      // ถ้ามี token ที่ valid ให้ซ่อน notification
+      if (cachedToken && tokenExpiry && parseInt(tokenExpiry) > now) {
+        console.log('[TLM][Safari Mobile] Valid token found - hiding notification');
+        this._hideSafariMobileSetupNotification();
+
+        // Reset popup attempts counter เมื่อมี token
+        localStorage.removeItem('tlm_safari_popup_attempts');
       }
     },
 
@@ -1598,6 +1806,11 @@ function setKendoLicense() {
 
           // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
           this._hideSafariMobileSetupNotification();
+
+          // ✅ Double check - ตรวจสอบและซ่อน notification อีกครั้งหลังจาก delay เล็กน้อย
+          setTimeout(() => {
+            this._checkAndHideSafariNotification();
+          }, 1000);
 
           // Update status
           if (this.checkCurrentTokenStatus) {
@@ -1966,6 +2179,9 @@ function setKendoLicense() {
               if (this._isIOSSafari()) {
                 await new Promise(resolve => setTimeout(resolve, 500));
                 console.log('[TLM] Safari Mobile: Token ready for use');
+
+                // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
+                this._checkAndHideSafariNotification();
               }
             }
 
@@ -1997,6 +2213,9 @@ function setKendoLicense() {
                 this.msalInstance.setActiveAccount(accounts[0]);
                 console.log('[TLM] Auto selected first available account:', accounts[0].username);
               }
+
+              // ✅ Safari Mobile: ซ่อน notification ถ้ามี token อยู่แล้ว
+              this._checkAndHideSafariNotification();
             }
           }
         } catch (redirectError) {
@@ -2028,6 +2247,9 @@ function setKendoLicense() {
         this._msalReady = true;
         console.log('[TLM] Enhanced MSAL initialization completed for ' +
           (this._isMobileDevice() ? 'mobile' : 'desktop'));
+
+        // ✅ Safari Mobile: ตรวจสอบและซ่อน notification หลัง MSAL initialization
+        this._checkAndHideSafariNotification();
 
       } catch (error) {
         console.error('[TLM] Enhanced MSAL initialization failed:', error);
