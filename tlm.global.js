@@ -589,14 +589,27 @@ function setKendoLicense() {
           return null;
         }
 
-        // === Unified 3-Tier Fallback Strategy for ALL Devices ===
+        const isSafariMobile = this._isIOSSafari();
         const deviceType = this._isMobileDevice() ? 'Mobile' : 'Desktop';
 
+        // 🔥 OPTIMIZED: Safari Mobile ข้าม silent methods ไปทำ popup เลย
+        // เพราะ iframe/cors restrictions ทำให้ acquireTokenSilent & ssoSilent ใช้ไม่ได้
+        if (isSafariMobile) {
+          console.log('[TLM][Safari Mobile] 🚀 Skipping silent methods - going straight to popup');
+          console.log('[TLM][Safari Mobile] Reason: iframe/3rd-party cookies blocked on iOS Safari');
+
+          // ข้ามไป TIER 3 เลย (popup)
+          await this._handleInteractionRequired({
+            errorCode: 'safari_mobile_skip_silent_methods'
+          });
+          return null;
+        }
+
+        // === Desktop & Non-Safari Mobile: Unified 3-Tier Fallback Strategy ===
         console.log(`[TLM] ${deviceType} - using unified 3-tier fallback strategy`);
 
-
         debugger;
-        // 🔵 TIER 1: acquireTokenSilent (cache) - ใช้กับทุก device
+        // 🔵 TIER 1: acquireTokenSilent (cache) - Desktop & Non-Safari Mobile
         console.log(`[TLM] ${deviceType}: Trying TIER 1 - acquireTokenSilent (cache)`);
         const silentResult = await this.performAcquireTokenSilent(options);
         if (silentResult && silentResult.accessToken) {
@@ -613,35 +626,31 @@ function setKendoLicense() {
         }
 
         debugger;
-        // 🔵 TIER 2: ssoSilent (M365 session) - ข้ามเฉพาะ Safari Mobile (iframe blocked)
-        if (!this._isIOSSafari()) {
-          console.log(`[TLM] ${deviceType}: TIER 1 failed, trying TIER 2 - ssoSilent (M365 session)`);
+        // 🔵 TIER 2: ssoSilent (M365 session) - Desktop & Non-Safari Mobile
+        console.log(`[TLM] ${deviceType}: TIER 1 failed, trying TIER 2 - ssoSilent (M365 session)`);
 
-          try {
-            const ssoResult = await this.performSsoSilent(options);
-            if (ssoResult && ssoResult.accessToken) {
-              console.log(`[TLM] ${deviceType}: ✅ TIER 2 successful (SSO)`);
-              this._tokenAttemptFailureCount = 0;
+        try {
+          const ssoResult = await this.performSsoSilent(options);
+          if (ssoResult && ssoResult.accessToken) {
+            console.log(`[TLM] ${deviceType}: ✅ TIER 2 successful (SSO)`);
+            this._tokenAttemptFailureCount = 0;
 
-              // Update token for all devices
-              this.azureToken = "Bearer " + ssoResult.accessToken;
-              localStorage.setItem('tlm_azure_token', this.azureToken);
-              const expiryTime = Date.now() + (this.TOKEN_DURATION_MINUTES * 60 * 1000);
-              localStorage.setItem('tlm_token_expiry', expiryTime.toString());
+            // Update token for all devices
+            this.azureToken = "Bearer " + ssoResult.accessToken;
+            localStorage.setItem('tlm_azure_token', this.azureToken);
+            const expiryTime = Date.now() + (this.TOKEN_DURATION_MINUTES * 60 * 1000);
+            localStorage.setItem('tlm_token_expiry', expiryTime.toString());
 
-              return ssoResult;
-            }
-          } catch (ssoError) {
-            // Expected errors - iframe restrictions, X-Frame-Options
-            console.log(`[TLM] ${deviceType}: TIER 2 (ssoSilent) failed:`, ssoError.message || ssoError.errorCode);
+            return ssoResult;
           }
-        } else {
-          console.log(`[TLM] ${deviceType}: Skipping TIER 2 (ssoSilent) - iframe blocked on iOS Safari`);
+        } catch (ssoError) {
+          // Expected errors - iframe restrictions, X-Frame-Options
+          console.log(`[TLM] ${deviceType}: TIER 2 (ssoSilent) failed:`, ssoError.message || ssoError.errorCode);
         }
 
         debugger;
-        // 🔵 TIER 3: loginRedirect (user interaction) - ใช้ logic เดียวกันทุก device
-        console.log(`[TLM] ${deviceType}: TIER 1 & 2 failed, using TIER 3 - loginRedirect`);
+        // 🔵 TIER 3: Interactive (redirect/popup) - Desktop & Non-Safari Mobile
+        console.log(`[TLM] ${deviceType}: TIER 1 & 2 failed, using TIER 3 - Interactive auth`);
 
         // ป้องกันการ redirect ซ้ำถ้าเพิ่งทำ authentication มาแล้ว
         const justAuthenticated = localStorage.getItem('tlm_just_authenticated');
