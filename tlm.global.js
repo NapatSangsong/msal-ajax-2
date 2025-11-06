@@ -1641,6 +1641,13 @@ function setKendoLicense() {
     validateAndRefreshToken: async function () {
       if (this._disposed) return false;
 
+      // Safari Mobile: STOP - no token refresh allowed
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ validateAndRefreshToken blocked - popup authentication only');
+        this._showSafariMobileSetupNotification();
+        return false;
+      }
+
       // Check for previous AAD loop detection
       if (this.isLoopDetected()) {
         console.warn('[TLM] Token refresh blocked due to loop detection');
@@ -1693,6 +1700,13 @@ function setKendoLicense() {
 
     // Enhanced Token Refresh Process
     _performEnhancedTokenRefresh: async function () {
+      // Safari Mobile: STOP - should never reach here
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ _performEnhancedTokenRefresh should not be called');
+        this._showSafariMobileSetupNotification();
+        return false;
+      }
+
       try {
         // Initialize MSAL if needed
         if (!this._msalReady || !this.msalInstance) {
@@ -2145,10 +2159,16 @@ function setKendoLicense() {
       }
       // Enhanced background refresh for expiring tokens
       else if (parseInt(currentTokenExpiry) - now < (5 * 60 * 1000)) {
-        console.log("[TLM] Token expiring soon, enhanced background refresh...");
-        this.validateAndRefreshToken().catch(error => {
-          console.warn("[TLM] Enhanced background token refresh failed:", error);
-        });
+        // Safari Mobile: STOP - no background refresh
+        if (this._isIOSSafari()) {
+          console.log('[TLM][Safari Mobile] ⚠️ Token expiring - skipping background refresh');
+          // Don't show notification yet - token still valid
+        } else {
+          console.log("[TLM] Token expiring soon, enhanced background refresh...");
+          this.validateAndRefreshToken().catch(error => {
+            console.warn("[TLM] Enhanced background token refresh failed:", error);
+          });
+        }
       }
 
       // Ensure token is available
@@ -2168,6 +2188,20 @@ function setKendoLicense() {
 
       // Enhanced final attempt if no token
       console.log("[TLM] No token available, attempting enhanced final validation...");
+
+      // Safari Mobile: STOP - no final token acquisition
+      if (this._isIOSSafari()) {
+        console.log('[TLM][Safari Mobile] ⚠️ Final token acquisition blocked');
+        this._showSafariMobileSetupNotification();
+        if (_options.error) {
+          _options.error({
+            status: 401,
+            statusText: "Authentication Required",
+            responseText: "Unable to acquire authentication token"
+          }, "error", "Authentication Required");
+        }
+        return;
+      }
 
       try {
         await this.initialize();
@@ -2258,14 +2292,19 @@ function setKendoLicense() {
 
           // Enhanced account recovery if needed
           if (tokenStatus.valid && !tokenStatus.hasAccounts && this.msalInstance) {
-            console.log('[TLM] Valid token but no accounts, attempting account recovery...');
-            try {
-              const recoveryResult = await this.acquireTokenWithFallback();
-              if (recoveryResult) {
-                console.log('[TLM] Account recovery successful');
+            // Safari Mobile: STOP - no account recovery
+            if (this._isIOSSafari()) {
+              console.log('[TLM][Safari Mobile] ⚠️ Account recovery blocked');
+            } else {
+              console.log('[TLM] Valid token but no accounts, attempting account recovery...');
+              try {
+                const recoveryResult = await this.acquireTokenWithFallback();
+                if (recoveryResult) {
+                  console.log('[TLM] Account recovery successful');
+                }
+              } catch (recoveryError) {
+                console.warn('[TLM] Account recovery failed:', recoveryError);
               }
-            } catch (recoveryError) {
-              console.warn('[TLM] Account recovery failed:', recoveryError);
             }
           }
 
@@ -2475,6 +2514,14 @@ function setKendoLicense() {
           // Enhanced recovery attempt
           const attemptEnhancedRecovery = async () => {
             try {
+              // Safari Mobile: STOP - no enhanced recovery
+              if (tlm.global._isIOSSafari()) {
+                console.log('[TLM][Safari Mobile] ⚠️ Enhanced recovery blocked - showing notification');
+                tlm.global._showSafariMobileSetupNotification();
+                tlm.global._handling401Error = false;
+                return;
+              }
+
               console.log('[TLM] Attempting enhanced token recovery...');
 
               const recoveryResult = await tlm.global.validateAndRefreshToken();
@@ -7768,10 +7815,15 @@ $(document).ready(function () {
       }
 
       if (tokenStatus.status === 'EXPIRING_SOON' && tokenStatus.hasAccounts) {
-        console.log("[TLM] Background refresh before API call...");
-        tlm.global.validateAndRefreshToken().catch(error => {
-          console.error("[TLM] Background token refresh failed:", error);
-        });
+        // Safari Mobile: STOP - no background refresh
+        if (tlm.global._isIOSSafari()) {
+          console.log('[TLM][Safari Mobile] ⚠️ Token expiring - skipping background refresh in beforeSend');
+        } else {
+          console.log("[TLM] Background refresh before API call...");
+          tlm.global.validateAndRefreshToken().catch(error => {
+            console.error("[TLM] Background token refresh failed:", error);
+          });
+        }
       }
     });
   }
@@ -7847,7 +7899,12 @@ $(document).ready(function () {
 
       // Re-initialize critical components
       if (typeof tlm !== 'undefined' && tlm.global) {
-        tlm.global.validateAndRefreshToken();
+        // Safari Mobile: STOP - no token refresh on pageshow
+        if (!tlm.global._isIOSSafari || !tlm.global._isIOSSafari()) {
+          tlm.global.validateAndRefreshToken();
+        } else {
+          console.log('[TLM][Safari Mobile] ⚠️ Skipping validateAndRefreshToken on pageshow');
+        }
       }
     }
   });
@@ -7863,9 +7920,14 @@ $(document).ready(function () {
 
       // ตรวจสอบ token ด้วย
       if (typeof tlm !== 'undefined' && tlm.global) {
-        const tokenStatus = tlm.global.checkCurrentTokenStatus();
-        if (tokenStatus.minutesLeft < 10) {
-          tlm.global.validateAndRefreshToken();
+        // Safari Mobile: STOP - no token refresh on visibility change
+        if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
+          console.log('[TLM][Safari Mobile] ⚠️ Skipping validateAndRefreshToken on visibility change');
+        } else {
+          const tokenStatus = tlm.global.checkCurrentTokenStatus();
+          if (tokenStatus.minutesLeft < 10) {
+            tlm.global.validateAndRefreshToken();
+          }
         }
       }
     }
@@ -8007,6 +8069,14 @@ window.tlmDebug = {
   // Enhanced token refresh
   refresh: async () => {
     console.log('🔄 [TLM DEBUG] Enhanced token refresh...');
+
+    // Safari Mobile: STOP - manual refresh blocked
+    if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
+      console.log('[TLM][Safari Mobile] ⚠️ Manual refresh blocked - use page Refresh button');
+      tlm.global._showSafariMobileSetupNotification();
+      return false;
+    }
+
     try {
       const result = await tlm.global.validateAndRefreshToken();
       console.log(result ? '✅ Enhanced refresh successful' : '❌ Enhanced refresh failed');
