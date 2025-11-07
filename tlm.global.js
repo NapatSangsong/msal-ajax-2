@@ -2184,14 +2184,15 @@ function setKendoLicense() {
       document.body.appendChild(loader);
       console.log('[TLM][Safari iOS] ✅ Token parsing loader displayed');
 
-      // Safety timeout: auto-hide after 10 seconds
-      setTimeout(() => {
+      // Safety timeout: auto-hide after 20 seconds (Safari iOS popup can take 15+ seconds)
+      // Store timeout ID so we can cancel it when token is ready
+      this._loaderTimeoutId = setTimeout(() => {
         const loaderElement = document.getElementById('tlm-token-parsing-loader');
         if (loaderElement) {
-          console.warn('[TLM][Safari iOS] ⚠️ Token parsing timeout - auto-hiding loader after 10s');
+          console.warn('[TLM][Safari iOS] ⚠️ Token parsing timeout - auto-hiding loader after 20s');
           this._hideTokenParsingLoader();
         }
-      }, 10000);
+      }, 20000);
     },
 
     /**
@@ -2200,6 +2201,14 @@ function setKendoLicense() {
      */
     _hideTokenParsingLoader: function () {
       console.log('[TLM][Safari iOS] 🔄 Hiding token parsing loader');
+      
+      // Cancel the safety timeout if it exists
+      if (this._loaderTimeoutId) {
+        clearTimeout(this._loaderTimeoutId);
+        this._loaderTimeoutId = null;
+        console.log('[TLM][Safari iOS] ✅ Cancelled loader timeout');
+      }
+      
       const loader = document.getElementById('tlm-token-parsing-loader');
       if (loader) {
         loader.style.opacity = '0';
@@ -2398,12 +2407,12 @@ function setKendoLicense() {
 
         } else {
           console.error('[TLM][iOS WebKit] ❌ No access token in result');
-          
+
           // 🎯 SAFARI iOS: Hide loader on failure
           if (this._isSafariIOS()) {
             this._hideTokenParsingLoader();
           }
-          
+
           return false;
         }
 
