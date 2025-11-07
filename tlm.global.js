@@ -477,6 +477,31 @@ function setKendoLicense() {
       return this._isIOSWebKit();
     },
 
+    /**
+     * CRITICAL: Detect Safari browser ONLY on iOS (not Chrome/Edge/Firefox iOS)
+     * Purpose: Safari iOS has unique in-place redirect behavior that causes race condition
+     * Chrome iOS does full-page redirect (like Desktop) - no race condition
+     * @returns {boolean} true if Safari on iOS (iPhone/iPad), false otherwise
+     */
+    _isSafariIOS: function () {
+      const ua = navigator.userAgent;
+
+      // Check if iOS device
+      const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+
+      // Check if Safari browser (NOT Chrome/Edge/Firefox on iOS)
+      // Safari has "Safari" in UA, others have CriOS/EdgiOS/FxiOS
+      const isSafari = /Safari/i.test(ua) && !/CriOS|EdgiOS|FxiOS/i.test(ua);
+
+      const result = isIOS && isSafari;
+
+      if (result) {
+        console.log('[TLM][Safari iOS] Detected Safari browser on iOS - will use race condition protection');
+      }
+
+      return result;
+    },
+
     //  function สำหรับตรวจสอบ mobile ทั่วไป
     _isMobileDevice: function () {
       return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -1857,191 +1882,117 @@ function setKendoLicense() {
 
         <!-- Content -->
         <div style="padding: 24px 20px;">
+          <!-- Primary CTA Section -->
           <div style="
-            font-size: 15px;
+            font-size: 16px;
             color: #323130;
+            font-weight: 600;
             line-height: 1.6;
             margin-bottom: 20px;
             text-align: center;
           ">
-            เพื่อให้คุณเข้าใช้งานได้<br>
-            กรุณาทำตามขั้นตอนด้านล่าง
+            URL หลัง redirect กลับมาเป็นยังไง (มี #code= ไหม)URL หลัง redirect กลับมาเป็นยังไง (มี #code= ไหม)
           </div>
 
-          <!-- Steps -->
+          <!-- Safari iOS Explanation -->
           <div style="
-            background: #f3f2f1;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-          ">
-            <div style="
-              font-size: 13px;
-              font-weight: 600;
-              color: #605e5c;
-              margin-bottom: 12px;
-              text-align: center;
-            ">ขั้นตอนการตั้งค่า</div>
-            
-            <div style="margin-bottom: 10px;">
-              <div style="
-                display: flex;
-                align-items: start;
-                gap: 10px;
-              ">
-                <div style="
-                  background: #0078d4;
-                  color: white;
-                  width: 22px;
-                  height: 22px;
-                  border-radius: 50%;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 12px;
-                  font-weight: 700;
-                  flex-shrink: 0;
-                  margin-top: 1px;
-                ">1</div>
-                <div style="
-                  font-size: 14px;
-                  color: #323130;
-                  line-height: 1.5;
-                ">เปิดแอป <strong>การตั้งค่า (Settings)</strong> บนไอโฟนของคุณ<br>
-                <span style="font-size: 12px; color: #605e5c;">(ไอคอนรูปเฟือง สีเทา)</span></div>
-              </div>
-            </div>
-
-            <div style="margin-bottom: 10px;">
-              <div style="
-                display: flex;
-                align-items: start;
-                gap: 10px;
-              ">
-                <div style="
-                  background: #0078d4;
-                  color: white;
-                  width: 22px;
-                  height: 22px;
-                  border-radius: 50%;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 12px;
-                  font-weight: 700;
-                  flex-shrink: 0;
-                  margin-top: 1px;
-                ">2</div>
-                ${browserInstructions}
-              </div>
-            </div>
-
-            <div style="margin-bottom: 10px;">
-              <div style="
-                display: flex;
-                align-items: start;
-                gap: 10px;
-              ">
-                <div style="
-                  background: #0078d4;
-                  color: white;
-                  width: 22px;
-                  height: 22px;
-                  border-radius: 50%;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 12px;
-                  font-weight: 700;
-                  flex-shrink: 0;
-                  margin-top: 1px;
-                ">3</div>
-                <div style="
-                  font-size: 14px;
-                  color: #323130;
-                  line-height: 1.5;
-                ">ค้นหาและ <strong>ปิด</strong> "ปิดกั้นป๊อปอัพ"<br>
-                <span style="font-size: 12px; color: #605e5c;">(Block Pop-ups) เปลี่ยนสวิตช์จากสีเขียวเป็นสีเทา</span></div>
-              </div>
-            </div>
-
-            <div>
-              <div style="
-                display: flex;
-                align-items: start;
-                gap: 10px;
-              ">
-                <div style="
-                  background: #0078d4;
-                  color: white;
-                  width: 22px;
-                  height: 22px;
-                  border-radius: 50%;
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  font-size: 12px;
-                  font-weight: 700;
-                  flex-shrink: 0;
-                  margin-top: 1px;
-                ">4</div>
-                <div style="
-                  font-size: 14px;
-                  color: #323130;
-                  line-height: 1.5;
-                ">กลับมาที่หน้านี้และกดปุ่มด้านล่าง</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- NEW: Important Remark for Return Users -->
-          <div style="
-            background: #fff4ce;
-            border-left: 4px solid #ffb900;
+            background: #e7f3ff;
+            border-left: 4px solid #0078d4;
             border-radius: 4px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
+            padding: 14px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #323130;
+            line-height: 1.6;
           ">
-            <div style="
-              display: flex;
-              align-items: start;
-              gap: 10px;
-            ">
-              <div style="
-                color: #ffb900;
-                font-size: 18px;
-                flex-shrink: 0;
-              ">💡</div>
-              <div style="
-                font-size: 13px;
-                color: #323130;
-                line-height: 1.5;
-              ">
-                <strong>หมายเหตุ:</strong> หากคุณตั้งค่าเรียบร้อยแล้วแต่ยังเห็นหน้านี้อยู่ 
-                ให้กดปุ่ม "เข้าสู่ระบบ" ด้านล่างอีกครั้ง 
-                ระบบจะนำคุณไปยังหน้าล็อกอินโดยอัตโนมัติ
-              </div>
+            <div style="margin-bottom: 8px;">
+              <strong>📱 สำหรับ Safari บน iPhone/iPad:</strong>
+            </div>
+            <div>
+              Safari มีระบบรักษาความปลอดภัยพิเศษ 
+              ทำให้ต้องใช้วิธีการเข้าสู่ระบบที่แตกต่างจากเบราว์เซอร์อื่น
             </div>
           </div>
 
-          <!-- Action Button -->
+          <!-- Action Button - Primary -->
           <button id="tlm-safari-refresh-btn" style="
             width: 100%;
             background: linear-gradient(135deg, #0078d4 0%, #106ebe 100%);
             color: white;
             border: none;
-            padding: 14px 24px;
+            padding: 16px 24px;
             border-radius: 10px;
-            font-size: 16px;
+            font-size: 17px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
-            box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
             letter-spacing: -0.2px;
+            margin-bottom: 20px;
           ">
             เข้าสู่ระบบ
           </button>
 
+          <!-- Optional Settings Section (Collapsible) -->
+          <details style="margin-bottom: 16px;">
+            <summary style="
+              font-size: 14px;
+              color: #0078d4;
+              cursor: pointer;
+              padding: 8px 0;
+              list-style: none;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            ">
+              <span>⚙️</span>
+              <span style="text-decoration: underline;">ต้องการเข้าสู่ระบบเร็วขึ้น? (ไม่บังคับ)</span>
+            </summary>
+            
+            <div style="
+              background: #f3f2f1;
+              border-radius: 8px;
+              padding: 14px;
+              margin-top: 10px;
+              font-size: 13px;
+              line-height: 1.6;
+            ">
+              <div style="margin-bottom: 12px; color: #605e5c;">
+                หากต้องการให้ป๊อปอัพเข้าสู่ระบบแสดงโดยอัตโนมัติ สามารถตั้งค่าได้ดังนี้:
+              </div>
+
+              <div style="margin-bottom: 8px;">
+                <strong>1.</strong> เปิดแอป <strong>การตั้งค่า (Settings)</strong>
+              </div>
+
+              <div style="margin-bottom: 8px;">
+                <strong>2.</strong> ${browserInstructions.replace('<div style="font-size: 14px; color: #323130; line-height: 1.5;">', '').replace('</div>', '')}
+              </div>
+
+              <div style="margin-bottom: 8px;">
+                <strong>3.</strong> ค้นหาและ <strong>ปิด</strong> "ปิดกั้นป๊อปอัพ" (Block Pop-ups)
+              </div>
+
+              <div>
+                <strong>4.</strong> กลับมากดปุ่ม "เข้าสู่ระบบ" ด้านบน
+              </div>
+            </div>
+          </details>
+
+          <!-- Info Note -->
+          <div style="
+            font-size: 12px;
+            color: #8a8886;
+            line-height: 1.5;
+            text-align: center;
+          ">
+            💡 <strong>วิธีง่ายที่สุด:</strong> กดปุ่ม "เข้าสู่ระบบ" ด้านบน<br>
+            ระบบจะจัดการทุกอย่างให้คุณโดยอัตโนมัติ
+          </div>
+
+          <!-- Removed Steps Section - now in collapsible details -->
+
+          <!-- Footer Note -->
           <div style="
             margin-top: 16px;
             text-align: center;
@@ -2049,7 +2000,7 @@ function setKendoLicense() {
             color: #8a8886;
             line-height: 1.4;
           ">
-            ใช้ได้กับ Safari, Chrome และ Edge บน iOS<br>
+            ใช้ได้กับ Safari และ Chrome บน iOS<br>
             หากพบปัญหา กรุณาติดต่อ IT Support
           </div>
         </div>
@@ -2170,6 +2121,95 @@ function setKendoLicense() {
     },
 
     /**
+     * SAFARI iOS ONLY: Show token parsing loader
+     * Purpose: Prevent race condition when Safari iOS does in-place redirect
+     * Safari iOS behavior: redirect กลับมาแต่ page ยัง same context → Dashboard load ก่อน token parse
+     * Chrome iOS/Desktop: full page reload → sequential loading → no race condition
+     */
+    _showTokenParsingLoader: function () {
+      console.log('[TLM][Safari iOS] 🔄 Showing token parsing loader to prevent race condition');
+
+      // Check if loader already exists
+      if (document.getElementById('tlm-token-parsing-loader')) {
+        console.log('[TLM][Safari iOS] Loader already exists, skipping');
+        return;
+      }
+
+      const loader = document.createElement('div');
+      loader.id = 'tlm-token-parsing-loader';
+      loader.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.95);
+        z-index: 9999999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      `;
+
+      loader.innerHTML = `
+        <div style="text-align: center; padding: 30px;">
+          <div style="
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0078d4;
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            animation: spin 1s linear infinite;
+          "></div>
+          <div style="
+            font-size: 18px;
+            font-weight: 600;
+            color: #323130;
+            margin-bottom: 8px;
+          ">🔐 กำลังเข้าสู่ระบบ</div>
+          <div style="
+            font-size: 14px;
+            color: #605e5c;
+          ">กรุณารอสักครู่...</div>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      `;
+
+      document.body.appendChild(loader);
+      console.log('[TLM][Safari iOS] ✅ Token parsing loader displayed');
+
+      // Note: Loader will stay visible until:
+      // 1. Token is ready (normal case) - hidden in _performSafariPopupLogin success path
+      // 2. Authentication fails/cancelled - hidden in error path
+      // 3. Page visibility change without token - auto-cleanup
+      // No fixed timeout - handles slow user input gracefully
+    },
+
+    /**
+     * SAFARI iOS ONLY: Hide token parsing loader
+     * Called when token parsing completes (success or error)
+     */
+    _hideTokenParsingLoader: function () {
+      console.log('[TLM][Safari iOS] 🔄 Hiding token parsing loader');
+
+      const loader = document.getElementById('tlm-token-parsing-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        loader.style.transition = 'opacity 0.3s ease-out';
+        setTimeout(() => {
+          loader.remove();
+          console.log('[TLM][Safari iOS] ✅ Token parsing loader removed');
+        }, 300);
+      } else {
+        console.log('[TLM][Safari iOS] No loader found to hide');
+      }
+    },    /**
      * Check and hide iOS WebKit notification if token exists
      * เรียกใช้เมื่อ page load หรือเมื่อได้ token
      */
@@ -2219,6 +2259,13 @@ function setKendoLicense() {
      */
     _performSafariPopupLogin: async function () {
       console.log('[TLM][iOS WebKit] 🚀 Performing popup authentication (NO RELOAD)...');
+
+      // 🎯 SAFARI iOS RACE CONDITION FIX: Show loader BEFORE authentication
+      // Block Dashboard.js from loading while token is being acquired via popup
+      if (this._isSafariIOS()) {
+        console.log('[TLM][Safari iOS] 🔐 Showing loader - blocking Dashboard during popup auth...');
+        this._showTokenParsingLoader();
+      }
 
       try {
         // 🔥 CRITICAL FIX #2: Clear ALL MSAL interaction locks comprehensively before popup
@@ -2322,7 +2369,30 @@ function setKendoLicense() {
           window.dispatchEvent(new CustomEvent('tlm_token_ready'));
           console.log('[TLM][iOS WebKit] 📢 Token ready event dispatched');
 
-          // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
+          // 🎯 SAFARI iOS RACE CONDITION FIX: Hide loader AFTER token is ready
+          if (this._isSafariIOS()) {
+            console.log('[TLM][Safari iOS] ✅ Token ready - hiding loader...');
+            this._hideTokenParsingLoader();
+
+            // ✅ ซ่อน Safari notification ก่อน reload
+            this._hideSafariMobileSetupNotification();
+
+            // 🔥 CRITICAL FIX: Auto-reload to prevent Dashboard race condition
+            // Safari iOS issue: in-place redirect → Dashboard loads before token parse completes → shows error
+            // Chrome iOS: full page reload → sequential loading → no race condition (no reload needed)
+            // Solution: Force reload after token save to ensure Dashboard loads with valid token in localStorage
+            console.log('[TLM][Safari iOS] 🔄 Auto-reloading page to prevent Dashboard race condition...');
+            console.log('[TLM][Safari iOS] Token saved at:', new Date().toISOString());
+            setTimeout(() => {
+              console.log('[TLM][Safari iOS] 🔄 Reloading now...');
+              window.location.reload();
+            }, 500); // Delay to ensure all localStorage operations complete before reload
+
+            return true; // Exit early - page will reload, no need to continue
+          }
+
+          // ✅ Non-Safari iOS (Chrome iOS, etc): Continue normal flow without reload
+          // ซ่อน Safari notification เมื่อได้ token แล้ว
           this._hideSafariMobileSetupNotification();
 
           // ✅ Double check - ตรวจสอบและซ่อน notification อีกครั้งหลังจาก delay เล็กน้อย
@@ -2341,11 +2411,22 @@ function setKendoLicense() {
 
         } else {
           console.error('[TLM][iOS WebKit] ❌ No access token in result');
+
+          // 🎯 SAFARI iOS: Hide loader on failure
+          if (this._isSafariIOS()) {
+            this._hideTokenParsingLoader();
+          }
+
           return false;
         }
 
       } catch (error) {
         console.error('[TLM][iOS WebKit] ❌ Popup authentication error:', error);
+
+        // 🎯 SAFARI iOS: Hide loader on error
+        if (this._isSafariIOS()) {
+          this._hideTokenParsingLoader();
+        }
 
         // Check error type
         if (error.errorCode === 'user_cancelled') {
@@ -2666,7 +2747,27 @@ function setKendoLicense() {
             window.location.search.includes('code=');
           console.log('[TLM] Redirect fragment detected:', hasRedirectFragment);
 
-          const response = await this.msalInstance.handleRedirectPromise();
+          // 🔥 SAFARI iOS RACE CONDITION FIX:
+          // Safari iOS does "in-place redirect" when popup blocked → same page context
+          // Dashboard may load before token parsing completes → show loader to prevent race condition
+          // Chrome iOS/Desktop do full page reload → sequential loading → no race condition needed
+          if (hasRedirectFragment && this._isSafariIOS()) {
+            console.log('[TLM][Safari iOS] 🛡️ Race condition protection: Showing loader while parsing token');
+            this._showTokenParsingLoader();
+          }
+
+          let response;
+          try {
+            response = await this.msalInstance.handleRedirectPromise();
+          } catch (redirectError) {
+            // Safari iOS: Hide loader on error
+            if (this._isSafariIOS()) {
+              console.error('[TLM][Safari iOS] ❌ Token parsing failed:', redirectError);
+              this._hideTokenParsingLoader();
+            }
+            throw redirectError;
+          }
+
           if (response) {
             console.log('[TLM] Redirect handled successfully');
             console.log('[TLM] Response from redirect:', response);
@@ -2714,6 +2815,12 @@ function setKendoLicense() {
                 // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
                 this._checkAndHideSafariNotification();
               }
+
+              // 🔥 SAFARI iOS: Hide loader now that token is ready
+              if (this._isSafariIOS()) {
+                console.log('[TLM][Safari iOS] ✅ Token parsing complete - hiding loader');
+                this._hideTokenParsingLoader();
+              }
             }
 
             // Handle intended URL redirect
@@ -2737,6 +2844,12 @@ function setKendoLicense() {
               console.error('[TLM] ⚠️ REDIRECT FRAGMENTS FOUND but handleRedirectPromise returned null!');
               console.error('[TLM] This indicates MSAL failed to process redirect response.');
               console.error('[TLM] URL:', window.location.href);
+
+              // Safari iOS: Hide loader on failed token parse
+              if (this._isSafariIOS()) {
+                console.error('[TLM][Safari iOS] ❌ Failed to parse token from redirect - hiding loader');
+                this._hideTokenParsingLoader();
+              }
               // Don't silently continue - this is an error condition
               // But still try to use cached token as fallback
             } else {
@@ -8701,6 +8814,17 @@ $(document).ready(function () {
         // iOS WebKit: STOP - no token refresh on visibility change
         if (tlm.global._isIOSWebKit && tlm.global._isIOSWebKit()) {
           console.log('[TLM][iOS WebKit] ⚠️ Skipping validateAndRefreshToken on visibility change');
+
+          // 🎯 SAFARI iOS: Cleanup loader if page became visible but no token acquired
+          // This handles case where user closes popup without authenticating
+          setTimeout(() => {
+            const loader = document.getElementById('tlm-token-parsing-loader');
+            const hasToken = localStorage.getItem('tlm_azure_token');
+            if (loader && !hasToken) {
+              console.log('[TLM][Safari iOS] 🧹 Cleaning up orphaned loader (no token acquired)');
+              tlm.global._hideTokenParsingLoader();
+            }
+          }, 2000); // Wait 2s after visibility change
         } else {
           const tokenStatus = tlm.global.checkCurrentTokenStatus();
           if (tokenStatus.minutesLeft < 10) {
