@@ -1891,7 +1891,7 @@ function setKendoLicense() {
             margin-bottom: 20px;
             text-align: center;
           ">
-            กรุณาเข้าสู่ระบบ
+            URL หลัง redirect กลับมาเป็นยังไง (มี #code= ไหม)URL หลัง redirect กลับมาเป็นยังไง (มี #code= ไหม)
           </div>
 
           <!-- Safari iOS Explanation -->
@@ -2128,7 +2128,7 @@ function setKendoLicense() {
      */
     _showTokenParsingLoader: function () {
       console.log('[TLM][Safari iOS] 🔄 Showing token parsing loader to prevent race condition');
-      
+
       // Check if loader already exists
       if (document.getElementById('tlm-token-parsing-loader')) {
         console.log('[TLM][Safari iOS] Loader already exists, skipping');
@@ -2264,6 +2264,13 @@ function setKendoLicense() {
     _performSafariPopupLogin: async function () {
       console.log('[TLM][iOS WebKit] 🚀 Performing popup authentication (NO RELOAD)...');
 
+      // 🎯 SAFARI iOS RACE CONDITION FIX: Show loader BEFORE authentication
+      // Block Dashboard.js from loading while token is being acquired via popup
+      if (this._isSafariIOS()) {
+        console.log('[TLM][Safari iOS] 🔐 Showing loader - blocking Dashboard during popup auth...');
+        this._showTokenParsingLoader();
+      }
+
       try {
         // 🔥 CRITICAL FIX #2: Clear ALL MSAL interaction locks comprehensively before popup
         console.log('[TLM][iOS WebKit] 🗑️ Clearing all MSAL interaction locks...');
@@ -2366,6 +2373,12 @@ function setKendoLicense() {
           window.dispatchEvent(new CustomEvent('tlm_token_ready'));
           console.log('[TLM][iOS WebKit] 📢 Token ready event dispatched');
 
+          // 🎯 SAFARI iOS RACE CONDITION FIX: Hide loader AFTER token is ready
+          if (this._isSafariIOS()) {
+            console.log('[TLM][Safari iOS] ✅ Token ready - hiding loader...');
+            this._hideTokenParsingLoader();
+          }
+
           // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
           this._hideSafariMobileSetupNotification();
 
@@ -2385,11 +2398,22 @@ function setKendoLicense() {
 
         } else {
           console.error('[TLM][iOS WebKit] ❌ No access token in result');
+          
+          // 🎯 SAFARI iOS: Hide loader on failure
+          if (this._isSafariIOS()) {
+            this._hideTokenParsingLoader();
+          }
+          
           return false;
         }
 
       } catch (error) {
         console.error('[TLM][iOS WebKit] ❌ Popup authentication error:', error);
+
+        // 🎯 SAFARI iOS: Hide loader on error
+        if (this._isSafariIOS()) {
+          this._hideTokenParsingLoader();
+        }
 
         // Check error type
         if (error.errorCode === 'user_cancelled') {
@@ -2807,7 +2831,7 @@ function setKendoLicense() {
               console.error('[TLM] ⚠️ REDIRECT FRAGMENTS FOUND but handleRedirectPromise returned null!');
               console.error('[TLM] This indicates MSAL failed to process redirect response.');
               console.error('[TLM] URL:', window.location.href);
-              
+
               // Safari iOS: Hide loader on failed token parse
               if (this._isSafariIOS()) {
                 console.error('[TLM][Safari iOS] ❌ Failed to parse token from redirect - hiding loader');
