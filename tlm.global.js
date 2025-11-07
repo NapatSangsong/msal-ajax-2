@@ -2184,15 +2184,11 @@ function setKendoLicense() {
       document.body.appendChild(loader);
       console.log('[TLM][Safari iOS] ✅ Token parsing loader displayed');
 
-      // Safety timeout: auto-hide after 20 seconds (Safari iOS popup can take 15+ seconds)
-      // Store timeout ID so we can cancel it when token is ready
-      this._loaderTimeoutId = setTimeout(() => {
-        const loaderElement = document.getElementById('tlm-token-parsing-loader');
-        if (loaderElement) {
-          console.warn('[TLM][Safari iOS] ⚠️ Token parsing timeout - auto-hiding loader after 20s');
-          this._hideTokenParsingLoader();
-        }
-      }, 20000);
+      // Note: Loader will stay visible until:
+      // 1. Token is ready (normal case) - hidden in _performSafariPopupLogin success path
+      // 2. Authentication fails/cancelled - hidden in error path
+      // 3. Page visibility change without token - auto-cleanup
+      // No fixed timeout - handles slow user input gracefully
     },
 
     /**
@@ -2201,13 +2197,6 @@ function setKendoLicense() {
      */
     _hideTokenParsingLoader: function () {
       console.log('[TLM][Safari iOS] 🔄 Hiding token parsing loader');
-      
-      // Cancel the safety timeout if it exists
-      if (this._loaderTimeoutId) {
-        clearTimeout(this._loaderTimeoutId);
-        this._loaderTimeoutId = null;
-        console.log('[TLM][Safari iOS] ✅ Cancelled loader timeout');
-      }
       
       const loader = document.getElementById('tlm-token-parsing-loader');
       if (loader) {
@@ -2220,9 +2209,7 @@ function setKendoLicense() {
       } else {
         console.log('[TLM][Safari iOS] No loader found to hide');
       }
-    },
-
-    /**
+    },    /**
      * Check and hide iOS WebKit notification if token exists
      * เรียกใช้เมื่อ page load หรือเมื่อได้ token
      */
@@ -8810,6 +8797,17 @@ $(document).ready(function () {
         // iOS WebKit: STOP - no token refresh on visibility change
         if (tlm.global._isIOSWebKit && tlm.global._isIOSWebKit()) {
           console.log('[TLM][iOS WebKit] ⚠️ Skipping validateAndRefreshToken on visibility change');
+          
+          // 🎯 SAFARI iOS: Cleanup loader if page became visible but no token acquired
+          // This handles case where user closes popup without authenticating
+          setTimeout(() => {
+            const loader = document.getElementById('tlm-token-parsing-loader');
+            const hasToken = localStorage.getItem('tlm_azure_token');
+            if (loader && !hasToken) {
+              console.log('[TLM][Safari iOS] 🧹 Cleaning up orphaned loader (no token acquired)');
+              tlm.global._hideTokenParsingLoader();
+            }
+          }, 2000); // Wait 2s after visibility change
         } else {
           const tokenStatus = tlm.global.checkCurrentTokenStatus();
           if (tokenStatus.minutesLeft < 10) {
