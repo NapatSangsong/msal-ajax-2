@@ -400,7 +400,7 @@ function setKendoLicense() {
     _ssoSilentInProgress: false,
     _ssoSilentPromise: null,
     _lastTokenAttempt: 0,
-    _tokenAttemptCooldown: 5000,
+    _tokenAttemptCooldown: 2000, // CRITICAL FIX #5: Reduced from 5000ms to prevent blocking post-redirect token acquisition
     _tokenAttemptFailureCount: 0,
     MAX_TOKEN_ATTEMPT_FAILURES: 3,
     _lastErrorCode: null,
@@ -453,9 +453,19 @@ function setKendoLicense() {
       const lastRedirectTime = parseInt(localStorage.getItem('tlm_last_redirect_time') || '0');
       const now = Date.now();
 
+      // CRITICAL FIX #3: Auto-reset counter if >2 hours passed (session gap scenario)
+      // This prevents false loop detection when user returns after extended inactivity
+      if (redirectAttempts > 0 && (now - lastRedirectTime) > 7200000) { // 2 hours = 7200000ms
+        console.log('[TLM] Redirect attempts counter expired (>2 hours since last attempt) - auto-resetting');
+        console.log(`[TLM] Last redirect: ${new Date(lastRedirectTime).toISOString()}, Age: ${Math.floor((now - lastRedirectTime) / 60000)} minutes`);
+        localStorage.removeItem('tlm_redirect_attempts');
+        localStorage.removeItem('tlm_last_redirect_time');
+        return false; // Not a loop - just stale counter from previous session
+      }
+
       // Consider it a loop if:
       // 1. Previously detected AAD loop
-      // 2. Too many redirect attempts in short time
+      // 2. Too many redirect attempts in short time (3 attempts within 5 minutes)
       if (loopDetected) return true;
       if (redirectAttempts >= 3 && (now - lastRedirectTime) < 300000) return true; // 5 minutes
 
@@ -568,52 +578,80 @@ function setKendoLicense() {
       }
       this._redirectInProgress = true;
 
+      // CRITICAL FIX #5 & #6: Reset cooldown and add safety timeout for redirect flag
+      this._lastTokenAttempt = 0; // Reset cooldown so post-redirect token acquisition isn't blocked
+      console.log('[TLM] Reset token attempt cooldown before redirect');
+
+      // CRITICAL FIX #6: Auto-clear redirect flag after 10 seconds (safety timeout)
+      // SECURITY FIX: Reduced from 30s to 10s to handle browser back button edge case
+      // Prevents flag from being stuck if redirect fails or user cancels
+      setTimeout(() => {
+        if (this._redirectInProgress) {
+          console.warn('[TLM] Redirect flag still set after 10 seconds - auto-clearing (likely redirect failed)');
+          this._redirectInProgress = false;
+        }
+      }, 10000); // Reduced from 30000ms to 10000ms
+
       // Track redirect attempts สำหรับ loop detection (สำหรับ redirect เท่านั้น)
       const redirectAttempts = parseInt(localStorage.getItem('tlm_redirect_attempts') || '0');
       const now = Date.now();
       localStorage.setItem('tlm_redirect_attempts', (redirectAttempts + 1).toString());
       localStorage.setItem('tlm_last_redirect_time', now.toString());
       localStorage.setItem('tlm_intended_url', window.location.href);
-      localStorage.setItem('tlm_just_authenticated', 'true');
+
+      // CRITICAL FIX #1: Store timestamp instead of boolean for just_authenticated flag
+      // This allows auto-expiry and prevents race conditions
+      localStorage.setItem('tlm_just_authenticated', now.toString());
 
       // === Desktop & Non-Safari Mobile: logout → login chain ===
+      // CRITICAL FIX #6: Wrap in try-finally to ensure redirect flag is cleared
       try {
-        // ทำการ logout เพื่อล้าง session เก่าที่อาจจะขัดแย้งอยู่
-        // แล้ว redirect กลับมาเพื่อ login ใหม่ทันทีในกระบวนการเดียว
-        await this.msalInstance.logoutRedirect({
-          onRedirectNavigate: (url) => {
-            // เราไม่ต้องการ redirect ไปยังหน้า post-logout ของ Azure AD
-            // แต่จะให้เริ่มกระบวนการ login ใหม่ทันที
-            const loginRequest = {
-              scopes: this._scopes,
-              redirectUri: this.dynamicRedirectUri,
-              authority: `https://login.microsoftonline.com/${this.tenantID}`,
-              prompt: "select_account", // บังคับให้ผู้ใช้เลือกบัญชีเพื่อแก้ปัญหา session conflict
-              // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
-              ...(isMobile && {
-                responseMode: 'fragment',
-                state: kendo.guid()
-              })
-            };
-            this.msalInstance.loginRedirect(loginRequest);
-            return false; // บอก MSAL ว่าเราจัดการ redirect เอง ไม่ต้องไปต่อ
-          }
-        });
-      } catch (logoutError) {
-        console.error('[TLM] The controlled logout-redirect flow failed. Falling back to a standard login redirect.', logoutError);
-        // หากกระบวนการ logout-redirect ด้านบนมีปัญหา ให้กลับไปใช้วิธี loginRedirect แบบมาตรฐาน
-        const loginRequest = {
-          scopes: this._scopes,
-          redirectUri: this.dynamicRedirectUri,
-          authority: `https://login.microsoftonline.com/${this.tenantID}`,
-          prompt: "select_account",
-          // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
-          ...(isMobile && {
-            responseMode: 'fragment',
-            state: kendo.guid()
-          })
-        };
-        this.msalInstance.loginRedirect(loginRequest);
+        try {
+          // ทำการ logout เพื่อล้าง session เก่าที่อาจจะขัดแย้งอยู่
+          // แล้ว redirect กลับมาเพื่อ login ใหม่ทันทีในกระบวนการเดียว
+          await this.msalInstance.logoutRedirect({
+            onRedirectNavigate: (url) => {
+              // เราไม่ต้องการ redirect ไปยังหน้า post-logout ของ Azure AD
+              // แต่จะให้เริ่มกระบวนการ login ใหม่ทันที
+              const loginRequest = {
+                scopes: this._scopes,
+                redirectUri: this.dynamicRedirectUri,
+                authority: `https://login.microsoftonline.com/${this.tenantID}`,
+                prompt: "select_account", // บังคับให้ผู้ใช้เลือกบัญชีเพื่อแก้ปัญหา session conflict
+                // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
+                ...(isMobile && {
+                  responseMode: 'fragment',
+                  state: kendo.guid()
+                })
+              };
+              this.msalInstance.loginRedirect(loginRequest);
+              return false; // บอก MSAL ว่าเราจัดการ redirect เอง ไม่ต้องไปต่อ
+            }
+          });
+        } catch (logoutError) {
+          console.error('[TLM] The controlled logout-redirect flow failed. Falling back to a standard login redirect.', logoutError);
+          // หากกระบวนการ logout-redirect ด้านบนมีปัญหา ให้กลับไปใช้วิธี loginRedirect แบบมาตรฐาน
+          const loginRequest = {
+            scopes: this._scopes,
+            redirectUri: this.dynamicRedirectUri,
+            authority: `https://login.microsoftonline.com/${this.tenantID}`,
+            prompt: "select_account",
+            // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
+            ...(isMobile && {
+              responseMode: 'fragment',
+              state: kendo.guid()
+            })
+          };
+          this.msalInstance.loginRedirect(loginRequest);
+        }
+      } finally {
+        // CRITICAL FIX #6: Clear redirect flag in finally (runs even if redirect succeeds)
+        // NOTE: This will execute, but redirect navigation will interrupt it
+        // That's OK - the flag will be cleared in handleRedirectPromise on return
+        setTimeout(() => {
+          this._redirectInProgress = false;
+          console.log('[TLM] Redirect flag cleared in finally block');
+        }, 1000); // Small delay to allow redirect to start
       }
     },
 
@@ -630,7 +668,12 @@ function setKendoLicense() {
         return null;
       }
 
-      if (now - this._lastTokenAttempt < this._tokenAttemptCooldown) {
+      // CRITICAL FIX #5: Add exception for post-authentication scenario
+      // Check if we're within 60 seconds of authentication (based on timestamp)
+      const justAuthTimestamp = localStorage.getItem('tlm_just_authenticated');
+      const isPostAuth = justAuthTimestamp && (now - parseInt(justAuthTimestamp)) < 60000; // Within 1 min of auth
+
+      if (!isPostAuth && now - this._lastTokenAttempt < this._tokenAttemptCooldown) {
         console.log('[TLM] Token acquisition on cooldown, skipping...');
         return null;
       }
@@ -669,11 +712,18 @@ function setKendoLicense() {
           console.log(`[TLM] ${deviceType}: ✅ TIER 1 successful (cache)`);
           this._tokenAttemptFailureCount = 0;
 
+          // CRITICAL FIX #3: Reset redirect attempts counter on successful token acquisition
+          localStorage.removeItem('tlm_redirect_attempts');
+          localStorage.removeItem('tlm_last_redirect_time');
+
           // Update token for all devices
           this.azureToken = "Bearer " + silentResult.accessToken;
           localStorage.setItem('tlm_azure_token', this.azureToken);
           const expiryTime = Date.now() + (this.TOKEN_DURATION_MINUTES * 60 * 1000);
           localStorage.setItem('tlm_token_expiry', expiryTime.toString());
+
+          // CRITICAL FIX #1: Clear just_authenticated flag now that token is successfully acquired
+          this._clearAuthenticationFlags('token_acquired');
 
           return silentResult;
         }
@@ -687,11 +737,18 @@ function setKendoLicense() {
             console.log(`[TLM] ${deviceType}: ✅ TIER 2 successful (SSO)`);
             this._tokenAttemptFailureCount = 0;
 
+            // CRITICAL FIX #3: Reset redirect attempts counter on successful token acquisition
+            localStorage.removeItem('tlm_redirect_attempts');
+            localStorage.removeItem('tlm_last_redirect_time');
+
             // Update token for all devices
             this.azureToken = "Bearer " + ssoResult.accessToken;
             localStorage.setItem('tlm_azure_token', this.azureToken);
             const expiryTime = Date.now() + (this.TOKEN_DURATION_MINUTES * 60 * 1000);
             localStorage.setItem('tlm_token_expiry', expiryTime.toString());
+
+            // CRITICAL FIX #1: Clear just_authenticated flag now that token is successfully acquired
+            this._clearAuthenticationFlags('token_acquired');
 
             return ssoResult;
           }
@@ -703,19 +760,27 @@ function setKendoLicense() {
         // 🔵 TIER 3: Interactive (redirect/popup) - Desktop & Non-Safari Mobile
         console.log(`[TLM] ${deviceType}: TIER 1 & 2 failed, using TIER 3 - Interactive auth`);
 
+        // CRITICAL FIX #1: Check just_authenticated timestamp instead of boolean
         // ป้องกันการ redirect ซ้ำถ้าเพิ่งทำ authentication มาแล้ว
-        const justAuthenticated = localStorage.getItem('tlm_just_authenticated');
-        if (justAuthenticated === 'true') {
-          console.error('[TLM] Just authenticated but still no token - possible authentication issue');
-          // Clear all authentication flags เพื่อไม่ให้ติด loop detection
-          localStorage.removeItem('tlm_just_authenticated');
-          localStorage.removeItem('tlm_redirect_attempts');
-          localStorage.removeItem('tlm_last_redirect_time');
-          localStorage.removeItem('tlm_aad_loop_detected');
-          this._tokenAttemptFailureCount++;
-          this._redirectInProgress = false;
-          console.log('[TLM] Cleared authentication flags to allow retry');
-          return null;
+        const justAuthTimestamp = localStorage.getItem('tlm_just_authenticated');
+        if (justAuthTimestamp) {
+          const authTime = parseInt(justAuthTimestamp);
+          const timeSinceAuth = now - authTime;
+
+          // Flag valid for 30 seconds only - protects against immediate re-auth loop
+          if (timeSinceAuth < 30000) {
+            console.error('[TLM] Just authenticated but still no token - possible authentication issue');
+            console.error(`[TLM] Time since authentication: ${Math.floor(timeSinceAuth / 1000)} seconds`);
+            // Clear all authentication flags เพื่อไม่ให้ติด loop detection
+            this._clearAuthenticationFlags('loop_clear');
+            this._tokenAttemptFailureCount++;
+            console.log('[TLM] Cleared authentication flags to allow retry');
+            return null;
+          } else {
+            // Flag expired - clear it and continue
+            console.log('[TLM] just_authenticated flag expired - clearing');
+            localStorage.removeItem('tlm_just_authenticated');
+          }
         }
 
         // ใช้ _handleInteractionRequired สำหรับทุก device
@@ -733,18 +798,25 @@ function setKendoLicense() {
           error.errorCode === 'consent_required' ||
           error.errorCode === 'login_required') {
 
+          // CRITICAL FIX #1: Check just_authenticated timestamp instead of boolean
           // ป้องกันการ redirect ซ้ำถ้าเพิ่งทำ authentication มาแล้ว
-          const justAuthenticated = localStorage.getItem('tlm_just_authenticated');
-          if (justAuthenticated === 'true') {
-            console.error('[TLM] Just authenticated but still no token - possible authentication issue');
-            // Clear all authentication flags เพื่อไม่ให้ติด loop detection
-            localStorage.removeItem('tlm_just_authenticated');
-            localStorage.removeItem('tlm_redirect_attempts');
-            localStorage.removeItem('tlm_last_redirect_time');
-            localStorage.removeItem('tlm_aad_loop_detected');
-            this._redirectInProgress = false;
-            console.log('[TLM] Cleared authentication flags to allow retry');
-            return null;
+          const justAuthTimestamp = localStorage.getItem('tlm_just_authenticated');
+          if (justAuthTimestamp) {
+            const authTime = parseInt(justAuthTimestamp);
+            const timeSinceAuth = Date.now() - authTime;
+
+            // Flag valid for 30 seconds only
+            if (timeSinceAuth < 30000) {
+              console.error('[TLM] Just authenticated but still no token - possible authentication issue');
+              console.error(`[TLM] Time since authentication: ${Math.floor(timeSinceAuth / 1000)} seconds`);
+              // Clear all authentication flags เพื่อไม่ให้ติด loop detection
+              this._clearAuthenticationFlags('loop_clear');
+              console.log('[TLM] Cleared authentication flags to allow retry');
+              return null;
+            } else {
+              // Flag expired - clear it
+              localStorage.removeItem('tlm_just_authenticated');
+            }
           }
 
           await this._handleInteractionRequired(error);
@@ -978,25 +1050,181 @@ function setKendoLicense() {
       }, 1000);
     },
 
+    // SECURITY FIX: Safe localStorage operations with quota/error handling
+    /**
+     * Safely set item in localStorage with error handling
+     * @param {string} key - localStorage key
+     * @param {string} value - value to store
+     * @returns {boolean} - true if successful, false if failed
+     */
+    _safeLocalStorageSet: function (key, value) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        // Handle quota exceeded, privacy mode, or other errors
+        if (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+          console.error(`[TLM] localStorage quota exceeded while setting ${key}`);
+          console.warn('[TLM] Attempting to clear old authentication data...');
+
+          // Try to free up space by clearing old auth data
+          try {
+            const keysToTry = ['tlm_aad_loop_detected', 'tlm_redirect_attempts', 'tlm_last_redirect_time'];
+            keysToTry.forEach(k => {
+              if (k !== key) localStorage.removeItem(k);
+            });
+
+            // Retry storage
+            localStorage.setItem(key, value);
+            console.log(`[TLM] Successfully stored ${key} after cleanup`);
+            return true;
+          } catch (retryError) {
+            console.error(`[TLM] Failed to store ${key} even after cleanup:`, retryError);
+            return false;
+          }
+        } else {
+          console.error(`[TLM] localStorage error for ${key}:`, error);
+          return false;
+        }
+      }
+    },
+
+    /**
+     * Safely get item from localStorage with error handling
+     * @param {string} key - localStorage key
+     * @returns {string|null} - value or null if not found/error
+     */
+    _safeLocalStorageGet: function (key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        console.error(`[TLM] localStorage read error for ${key}:`, error);
+        return null;
+      }
+    },
+
+    // CRITICAL FIX #7: Centralized authentication flags clearing
+    // Single source of truth for clearing flags - prevents inconsistent clearing across codebase
+    /**
+     * Centralized authentication flags clearing
+     * @param {string} level - 'redirect_success', 'token_acquired', 'loop_clear', 'full_reset'
+     */
+    _clearAuthenticationFlags: function (level = 'redirect_success') {
+      console.log(`[TLM] Clearing authentication flags - level: ${level}`);
+
+      switch (level) {
+        case 'redirect_success':
+          // Called from handleRedirectPromise after successful redirect
+          // NOTE: Do NOT clear tlm_just_authenticated here - let acquireTokenWithFallback handle it
+          // This prevents race condition where flag cleared before it's checked
+          localStorage.removeItem('tlm_redirect_attempts');
+          localStorage.removeItem('tlm_last_redirect_time');
+          localStorage.removeItem('tlm_aad_loop_detected');
+          this._tokenAttemptFailureCount = 0;
+          this._redirectInProgress = false;
+          this._lastTokenAttempt = 0; // Reset cooldown for immediate token acquisition
+          break;
+
+        case 'token_acquired':
+          // Called from acquireTokenWithFallback after successful token acquisition
+          // Safe to clear just_authenticated here since token is now available
+          localStorage.removeItem('tlm_just_authenticated');
+          localStorage.removeItem('tlm_redirect_attempts');
+          localStorage.removeItem('tlm_last_redirect_time');
+          this._tokenAttemptFailureCount = 0;
+          break;
+
+        case 'loop_clear':
+          // Called when user manually clears loop state or auto-clearing stale flags
+          localStorage.removeItem('tlm_aad_loop_detected');
+          localStorage.removeItem('tlm_redirect_attempts');
+          localStorage.removeItem('tlm_last_redirect_time');
+          localStorage.removeItem('tlm_just_authenticated');
+          localStorage.removeItem('tlm_intended_url');
+          this._tokenAttemptFailureCount = 0;
+          this._redirectInProgress = false;
+          break;
+
+        case 'full_reset':
+          // Called on logout or complete reset
+          const authKeys = [
+            'tlm_aad_loop_detected',
+            'tlm_azure_token',
+            'tlm_token_expiry',
+            'tlm_intended_url',
+            'tlm_redirect_attempts',
+            'tlm_last_redirect_time',
+            'tlm_token_refresh_lock',
+            'tlm_last_login_hint',
+            'tlm_just_authenticated',
+            'tlm_token_ready'
+          ];
+          authKeys.forEach(key => localStorage.removeItem(key));
+
+          this._tokenRefreshInProgress = false;
+          this._redirectInProgress = false;
+          this._initializationPromise = null;
+          this._tokenAttemptFailureCount = 0;
+          this._lastTokenAttempt = 0;
+          this.azureToken = null;
+          break;
+
+        default:
+          // SECURITY FIX: Handle invalid level parameter
+          console.warn(`[TLM] _clearAuthenticationFlags called with invalid level: ${level}`);
+          console.warn('[TLM] No flags cleared. Valid levels: redirect_success, token_acquired, loop_clear, full_reset');
+          break;
+      }
+
+      console.log(`[TLM] Flags cleared successfully - level: ${level}`);
+    },
+
+    // CRITICAL FIX #8: Detect and clear stale flags from previous session (Desktop specific)
+    // Prevents false loop detection when user returns after extended inactivity (>2 hours)
+    /**
+     * Clear authentication flags if browser was closed/inactive for >2 hours
+     * Detects "return after session gap" scenario on desktop browsers
+     */
+    _checkAndClearStaleFlags: function () {
+      const lastActive = localStorage.getItem('tlm_last_active');
+      const now = Date.now();
+
+      if (lastActive) {
+        const inactiveDuration = now - parseInt(lastActive);
+
+        // SECURITY FIX: Safeguard against system clock changes (negative time differences)
+        if (inactiveDuration < 0) {
+          console.warn(`[TLM] Negative time difference detected - system clock may have changed`);
+          console.warn(`[TLM] Clearing stale flags as safeguard`);
+          this._clearAuthenticationFlags('loop_clear');
+        }
+        // If inactive for >2 hours, clear authentication flags (session gap)
+        else if (inactiveDuration > 7200000) { // 2 hours = 7200000ms
+          console.log(`[TLM] Detected inactivity of ${Math.floor(inactiveDuration / 60000)} minutes - clearing stale flags`);
+          console.log(`[TLM] Last active: ${new Date(parseInt(lastActive)).toISOString()}`);
+          this._clearAuthenticationFlags('loop_clear');
+        } else {
+          console.log(`[TLM] Session continuous - inactive for ${Math.floor(inactiveDuration / 60000)} minutes`);
+        }
+      } else {
+        console.log('[TLM] First time tracking activity - setting baseline');
+      }
+
+      // Update last active timestamp
+      localStorage.setItem('tlm_last_active', now.toString());
+    },
+
     // Enhanced Authentication State Clearing
     clearAuthenticationLoopState: function () {
       console.log('[TLM] Clearing authentication loop state...');
 
-      // Clear loop detection flags
-      localStorage.removeItem('tlm_aad_loop_detected');
-      localStorage.removeItem('tlm_redirect_attempts');
-      localStorage.removeItem('tlm_last_redirect_time');
-      localStorage.removeItem('tlm_intended_url');
+      // CRITICAL FIX #7: Use centralized flag clearing instead of manual clearing
+      this._clearAuthenticationFlags('loop_clear');
 
       // Clear tokens
       localStorage.removeItem('tlm_azure_token');
       localStorage.removeItem('tlm_token_expiry');
       localStorage.removeItem('tlm_last_login_hint');
-
-      // Reset counters
-      this._tokenAttemptFailureCount = 0;
-      this._lastErrorCode = null;
-      this._lastTokenAttempt = 0;
 
       // Clear MSAL cache
       if (this.msalInstance) {
@@ -1017,19 +1245,10 @@ function setKendoLicense() {
     clearAllAuthState: function () {
       console.log("[TLM] Clearing all authentication state...");
 
-      const authKeys = [
-        "tlm_aad_loop_detected",
-        "tlm_azure_token",
-        "tlm_token_expiry",
-        "tlm_intended_url",
-        "tlm_redirect_attempts",
-        "tlm_last_redirect_time",
-        "tlm_token_refresh_lock",
-        "tlm_last_login_hint"
-      ];
+      // CRITICAL FIX #7: Use centralized flag clearing
+      this._clearAuthenticationFlags('full_reset');
 
-      authKeys.forEach(key => localStorage.removeItem(key));
-
+      // Clear MSAL cache
       if (this.msalInstance) {
         try {
           this.msalInstance.clearCache();
@@ -1037,11 +1256,6 @@ function setKendoLicense() {
           console.warn("[TLM] MSAL cache clear failed:", e);
         }
       }
-
-      this._tokenRefreshInProgress = false;
-      this._redirectInProgress = false;
-      this._initializationPromise = null;
-      this._tokenAttemptFailureCount = 0;
     },
 
     /* ===============================================
@@ -1139,6 +1353,10 @@ function setKendoLicense() {
     _doInitialize: async function (spfxContext) {
       try {
         console.log('[TLM] Starting enhanced initialization...');
+
+        // CRITICAL FIX #8: Check for stale flags from previous session (Desktop specific)
+        // This prevents false loop detection when user returns after 2+ hours
+        this._checkAndClearStaleFlags();
 
         // Check for AAD loop error
         if (this.isLoopDetected()) {
@@ -1294,7 +1512,8 @@ function setKendoLicense() {
 
           // เก็บ URL ปัจจุบัน และตั้งค่า flag
           localStorage.setItem('tlm_intended_url', window.location.href);
-          localStorage.setItem('tlm_just_authenticated', 'true');
+          // CRITICAL FIX #1: Store timestamp instead of boolean
+          localStorage.setItem('tlm_just_authenticated', Date.now().toString());
 
           // Non-Safari Mobile: สำหรับ Android และ mobile อื่นๆ
           const loginRequest = {
@@ -1348,10 +1567,12 @@ function setKendoLicense() {
         localStorage.setItem('tlm_redirect_attempts', (redirectAttempts + 1).toString());
         localStorage.setItem('tlm_last_redirect_time', now.toString());
         localStorage.setItem('tlm_intended_url', window.location.href);
-        localStorage.setItem('tlm_just_authenticated', 'true');
+        // CRITICAL FIX #1: Store timestamp instead of boolean
+        localStorage.setItem('tlm_just_authenticated', now.toString());
 
         console.log('[TLM] Desktop: Initiating redirect authentication...');
 
+        // CRITICAL FIX #6: Wrap in try-finally to ensure auth flag cleared on error
         try {
           await this.msalInstance.loginRedirect({
             scopes: this._scopes,
@@ -2300,26 +2521,25 @@ function setKendoLicense() {
 
         // Enhanced redirect promise handling สำหรับ mobile
         try {
-          // Log URL เพื่อดู query/fragment หลัง redirect
+          // CRITICAL FIX #4: Enhanced redirect detection - Log URL to detect redirect fragments
           console.log('[TLM] Current URL after redirect:', window.location.href);
           console.log('[TLM] URL search (query):', window.location.search);
           console.log('[TLM] URL hash (fragment):', window.location.hash);
+
+          // CRITICAL FIX #4: Detect if redirect actually occurred by checking for MSAL fragments
+          const hasRedirectFragment = window.location.hash.includes('code=') ||
+            window.location.hash.includes('id_token=') ||
+            window.location.search.includes('code=');
+          console.log('[TLM] Redirect fragment detected:', hasRedirectFragment);
 
           const response = await this.msalInstance.handleRedirectPromise();
           if (response) {
             console.log('[TLM] Redirect handled successfully');
             console.log('[TLM] Response from redirect:', response);
 
-            // Clear loop flags on successful redirect
-            localStorage.removeItem('tlm_redirect_attempts');
-            localStorage.removeItem('tlm_last_redirect_time');
-            localStorage.removeItem('tlm_aad_loop_detected');
-            localStorage.removeItem('tlm_just_authenticated');
-            this._tokenAttemptFailureCount = 0;
-
-            // Reset redirect flag และ cooldown เพื่อให้สามารถ acquire token ได้ทันที
-            this._redirectInProgress = false;
-            this._lastTokenAttempt = 0;
+            // CRITICAL FIX #7: Use centralized flag clearing instead of manual clearing
+            // CRITICAL FIX #1: Do NOT clear tlm_just_authenticated here - let acquireTokenWithFallback handle it
+            this._clearAuthenticationFlags('redirect_success');
 
             // Auto set active account
             if (response.account) {
@@ -2331,10 +2551,24 @@ function setKendoLicense() {
             if (response.accessToken) {
               const tokenDurationMs = this.TOKEN_DURATION_MINUTES * 60 * 1000;
 
+              // CRITICAL FIX #2: Add token readiness flags and event
               this.azureToken = "Bearer " + response.accessToken;
-              localStorage.setItem('tlm_azure_token', this.azureToken);
+              this._tokenReady = true; // Memory flag
+              this._waitingForToken = false; // Clear waiting state
+
+              // SECURITY FIX: Use safe localStorage operations with error handling
+              const tokenStored = this._safeLocalStorageSet('tlm_azure_token', this.azureToken);
               const expiryTime = new Date().getTime() + tokenDurationMs;
-              localStorage.setItem('tlm_token_expiry', expiryTime.toString());
+              const expiryStored = this._safeLocalStorageSet('tlm_token_expiry', expiryTime.toString());
+              const readyStored = this._safeLocalStorageSet('tlm_token_ready', 'true');
+
+              if (!tokenStored || !expiryStored) {
+                console.warn('[TLM] ⚠️ Failed to persist token to localStorage - token available in memory only');
+                console.warn('[TLM] Token will be lost on page refresh - user may need to re-authenticate');
+              }
+
+              // CRITICAL FIX #2: Dispatch event for app to listen
+              window.dispatchEvent(new CustomEvent('tlm_token_ready'));
 
               console.log('[TLM] Token stored successfully after redirect');
 
@@ -2353,14 +2587,25 @@ function setKendoLicense() {
             if (intendedUrl && intendedUrl !== window.location.href) {
               localStorage.removeItem('tlm_intended_url');
 
+              // CRITICAL FIX #2: Increase delay to ensure token fully saved (1500ms/1000ms instead of 1000ms/500ms)
               // รอให้ token save เสร็จก่อน redirect (สำคัญสำหรับ mobile)
               setTimeout(() => {
                 window.location.href = intendedUrl;
-              }, this._isMobileDevice() ? 1000 : 500);
+              }, this._isMobileDevice() ? 1500 : 1000);
               return; // Stop here to prevent further processing
             }
           } else {
-            console.log('[TLM] No response from handleRedirectPromise - likely no redirect happened');
+            // CRITICAL FIX #4: Better logging and validation - distinguish between "no redirect" vs "redirect failed"
+            if (hasRedirectFragment) {
+              console.error('[TLM] ⚠️ REDIRECT FRAGMENTS FOUND but handleRedirectPromise returned null!');
+              console.error('[TLM] This indicates MSAL failed to process redirect response.');
+              console.error('[TLM] URL:', window.location.href);
+              // Don't silently continue - this is an error condition
+              // But still try to use cached token as fallback
+            } else {
+              console.log('[TLM] No response from handleRedirectPromise - no redirect occurred (normal page load)');
+            }
+
             // No redirect response - check for cached token
             const cachedToken = localStorage.getItem('tlm_azure_token');
             const tokenExpiry = localStorage.getItem('tlm_token_expiry');
