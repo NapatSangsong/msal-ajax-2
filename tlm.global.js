@@ -408,7 +408,7 @@ function setKendoLicense() {
     _showFullLoadingCount: 0,
     _authenticationInProgress: false,
 
-    // Safari Mobile popup attempts tracking
+    // iOS WebKit popup attempts tracking
     // Increased from 1 to 3 to allow multiple tries before showing permanent notification
     // This is more forgiving for cases where popup blocker might need multiple attempts
     _safariPopupAttempts: 0,
@@ -417,26 +417,64 @@ function setKendoLicense() {
     /* ===============================================
        1.1. ENHANCED AUTHENTICATION & TOKEN MANAGEMENT
     =============================================== */
-    _isIOSSafari: function () {
-      // ตรวจสอบ iOS Safari แบบละเอียดขึ้น
+    /**
+     * CRITICAL FIX #1: Unified iOS WebKit Detection
+     * All browsers on iOS (Safari, Chrome, Edge) use the SAME WebKit engine
+     * They MUST be treated identically for authentication to prevent inconsistent behavior
+     * 
+     * Detection strategy:
+     * 1. Detect iOS device (iPhone, iPad, iPod, iPad emulating Mac)
+     * 2. Exclude in-app browsers (Facebook, Instagram, etc.) - they have severe restrictions
+     * 3. Include ALL standard browsers (Safari, Chrome, Edge) - they all use WebKit on iOS
+     * 
+     * @returns {boolean} true if iOS WebKit browser, false otherwise
+     */
+    _isIOSWebKit: function () {
       const ua = navigator.userAgent;
+
+      // Detect iOS device (including iPad pro masquerading as Mac)
       const isIOS = /iPad|iPhone|iPod/.test(ua) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
 
-      // ตรวจสอบเพิ่มเติมสำหรับ iOS Safari
+      // Exclude in-app browsers - they have additional restrictions beyond standard WebKit
+      const isInAppBrowser = /(FBAN|FBAV|Instagram|WhatsApp|Line|Twitter|FB_IAB|FBIOS)/i.test(ua);
+
+      // Exclude standalone PWA - different authentication context
       const isStandalonePWA = window.navigator.standalone === true;
-      const isInAppBrowser = /(FBAN|FBAV|Instagram|WhatsApp|Line)/i.test(ua);
 
-      console.log('[TLM] Device detection:', {
+      // Log detection results for debugging
+      console.log('[TLM] iOS WebKit Detection:', {
         isIOS: isIOS,
-        isSafari: isSafari,
-        isPWA: isStandalonePWA,
         isInApp: isInAppBrowser,
+        isPWA: isStandalonePWA,
+        browser: this._getIOSBrowserName(ua),
         userAgent: ua
       });
 
-      return isIOS && isSafari && !isInAppBrowser;
+      // Any iOS device browser EXCEPT in-app browsers and PWAs
+      return isIOS && !isInAppBrowser && !isStandalonePWA;
+    },
+
+    /**
+     * Helper function to identify specific iOS browser for logging/debugging
+     * All iOS browsers use WebKit, but this helps with user-facing messages
+     */
+    _getIOSBrowserName: function (ua) {
+      if (/CriOS/i.test(ua)) return 'Chrome';
+      if (/EdgiOS/i.test(ua)) return 'Edge';
+      if (/FxiOS/i.test(ua)) return 'Firefox';
+      if (/Safari/i.test(ua) && !/Chrome|CriOS|EdgiOS|FxiOS/i.test(ua)) return 'Safari';
+      return 'Unknown iOS Browser';
+    },
+
+    /**
+     * DEPRECATED: Legacy function kept for backward compatibility
+     * Use _isIOSWebKit() instead for all iOS browser detection
+     * @deprecated Use _isIOSWebKit() instead
+     */
+    _isIOSSafari: function () {
+      console.warn('[TLM] _isIOSSafari() is deprecated - use _isIOSWebKit() instead');
+      return this._isIOSWebKit();
     },
 
     //  function สำหรับตรวจสอบ mobile ทั่วไป
@@ -474,25 +512,25 @@ function setKendoLicense() {
     _handleInteractionRequired: async function (error) {
       console.warn('[TLM] Interaction required due to session conflict or expiry. Initiating a clean login flow.', error);
 
-      // ตรวจสอบว่าเป็น mobile device และ Safari Mobile หรือไม่
+      // ตรวจสอบว่าเป็น mobile device และ iOS WebKit หรือไม่
       const isMobile = this._isMobileDevice();
-      const isSafariMobile = this._isIOSSafari();
+      const isIOSWebKit = this._isIOSWebKit();
 
       // ===================================================
-      // Safari Mobile: ใช้ POPUP เท่านั้น (ไม่มี redirect)
+      // iOS WebKit (Safari, Chrome, Edge): ใช้ POPUP เท่านั้น (ไม่มี redirect)
       // ===================================================
-      if (isSafariMobile) {
-        console.log('[TLM][Safari Mobile] Detected - using POPUP authentication (NO RELOAD)');
+      if (isIOSWebKit) {
+        console.log('[TLM][iOS WebKit] Detected - using POPUP authentication (NO RELOAD)');
 
         // 🚫 Check if already showing popup guidance - prevent duplicate attempts
         if (this._showingPopupGuidance) {
-          console.log('[TLM][Safari Mobile] ⏸️ Popup guidance is showing - skipping duplicate authentication attempt');
+          console.log('[TLM][iOS WebKit] ⏸️ Popup guidance is showing - skipping duplicate authentication attempt');
           return null;
         }
 
         // 🚫 Check if already authenticating - prevent duplicate attempts
         if (this._authenticationInProgress) {
-          console.log('[TLM][Safari Mobile] ⏸️ Authentication already in progress - skipping duplicate attempt');
+          console.log('[TLM][iOS WebKit] ⏸️ Authentication already in progress - skipping duplicate attempt');
           return null;
         }
 
@@ -509,14 +547,14 @@ function setKendoLicense() {
         const ATTEMPT_RESET_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
 
         if (now - lastAttemptTime > ATTEMPT_RESET_TIMEOUT) {
-          console.log('[TLM][Safari Mobile] ♻️ Attempt counter timeout exceeded (24h) - resetting');
+          console.log('[TLM][iOS WebKit] ♻️ Attempt counter timeout exceeded (24h) - resetting');
           this._safariPopupAttempts = 0;
           sessionStorage.removeItem('tlm_safari_popup_attempts');
           localStorage.removeItem('tlm_safari_last_attempt_time');
         }
 
         if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
-          console.log('[TLM][Safari Mobile] ⚠️ Max popup attempts reached (' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ') - showing notification');
+          console.log('[TLM][iOS WebKit] ⚠️ Max popup attempts reached (' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ') - showing notification');
           this._showSafariMobileSetupNotification();
           return null;
         }
@@ -525,7 +563,7 @@ function setKendoLicense() {
         this._safariPopupAttempts++;
         sessionStorage.setItem('tlm_safari_popup_attempts', this._safariPopupAttempts.toString());
         localStorage.setItem('tlm_safari_last_attempt_time', now.toString());
-        console.log('[TLM][Safari Mobile] 🔄 Popup attempt #' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS);
+        console.log('[TLM][iOS WebKit] 🔄 Popup attempt #' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS);
 
         this._authenticationInProgress = true;
 
@@ -533,33 +571,33 @@ function setKendoLicense() {
           const success = await this._safariMobilePopupAuth();
 
           if (success) {
-            console.log('[TLM][Safari Mobile] ✅ Popup authentication completed - token ready');
-            // Reset counter on success (both memory and localStorage)
+            console.log('[TLM][iOS WebKit] ✅ Popup authentication completed - token ready');
+            // Reset counter on success (both memory and sessionStorage)
             this._safariPopupAttempts = 0;
-            localStorage.removeItem('tlm_safari_popup_attempts');
-            console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter');
+            sessionStorage.removeItem('tlm_safari_popup_attempts');
+            console.log('[TLM][iOS WebKit] ♻️ Reset popup attempt counter');
             this._authenticationInProgress = false;
             // ✅ NO RELOAD - token is ready immediately, page can continue
             return null;
           } else {
-            console.error('[TLM][Safari Mobile] ❌ Popup authentication failed (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ')');
+            console.error('[TLM][iOS WebKit] ❌ Popup authentication failed (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ')');
             this._authenticationInProgress = false;
 
             // Show notification if max attempts reached
             if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
-              console.log('[TLM][Safari Mobile] ⚠️ Max attempts reached - showing setup notification');
+              console.log('[TLM][iOS WebKit] ⚠️ Max attempts reached - showing setup notification');
               this._showSafariMobileSetupNotification();
             }
 
             return null;
           }
         } catch (error) {
-          console.error('[TLM][Safari Mobile] ❌ Authentication error (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + '):', error);
+          console.error('[TLM][iOS WebKit] ❌ Authentication error (attempt ' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + '):', error);
           this._authenticationInProgress = false;
 
           // Show notification if max attempts reached
           if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
-            console.log('[TLM][Safari Mobile] ⚠️ Max attempts reached - showing setup notification');
+            console.log('[TLM][iOS WebKit] ⚠️ Max attempts reached - showing setup notification');
             this._showSafariMobileSetupNotification();
           }
 
@@ -568,7 +606,7 @@ function setKendoLicense() {
       }
 
       // ===================================================
-      // Desktop & Non-Safari Mobile: ใช้ REDIRECT
+      // Desktop & Non-iOS Mobile: ใช้ REDIRECT
       // ===================================================
 
       // ป้องกันการเรียกซ้ำซ้อนหากกำลังอยู่ในกระบวนการ redirect
@@ -603,7 +641,7 @@ function setKendoLicense() {
       // This allows auto-expiry and prevents race conditions
       localStorage.setItem('tlm_just_authenticated', now.toString());
 
-      // === Desktop & Non-Safari Mobile: logout → login chain ===
+      // === Desktop & Non-iOS Mobile: logout → login chain ===
       // CRITICAL FIX #6: Wrap in try-finally to ensure redirect flag is cleared
       try {
         try {
@@ -618,7 +656,7 @@ function setKendoLicense() {
                 redirectUri: this.dynamicRedirectUri,
                 authority: `https://login.microsoftonline.com/${this.tenantID}`,
                 prompt: "select_account", // บังคับให้ผู้ใช้เลือกบัญชีเพื่อแก้ปัญหา session conflict
-                // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
+                // เพิ่มพารามิเตอร์สำหรับ mobile device (non-iOS)
                 ...(isMobile && {
                   responseMode: 'fragment',
                   state: kendo.guid()
@@ -636,7 +674,7 @@ function setKendoLicense() {
             redirectUri: this.dynamicRedirectUri,
             authority: `https://login.microsoftonline.com/${this.tenantID}`,
             prompt: "select_account",
-            // เพิ่มพารามิเตอร์สำหรับ mobile device (non-Safari)
+            // เพิ่มพารามิเตอร์สำหรับ mobile device (non-iOS)
             ...(isMobile && {
               responseMode: 'fragment',
               state: kendo.guid()
@@ -686,26 +724,26 @@ function setKendoLicense() {
           return null;
         }
 
-        const isSafariMobile = this._isIOSSafari();
+        const isIOSWebKit = this._isIOSWebKit();
         const deviceType = this._isMobileDevice() ? 'Mobile' : 'Desktop';
 
-        // 🔥 OPTIMIZED: Safari Mobile ข้าม silent methods ไปทำ popup เลย
+        // 🔥 OPTIMIZED: iOS WebKit ข้าม silent methods ไปทำ popup เลย
         // เพราะ iframe/cors restrictions ทำให้ acquireTokenSilent & ssoSilent ใช้ไม่ได้
-        if (isSafariMobile) {
-          console.log('[TLM][Safari Mobile] 🚀 Skipping silent methods - going straight to popup');
-          console.log('[TLM][Safari Mobile] Reason: iframe/3rd-party cookies blocked on iOS Safari');
+        if (isIOSWebKit) {
+          console.log('[TLM][iOS WebKit] 🚀 Skipping silent methods - going straight to popup');
+          console.log('[TLM][iOS WebKit] Reason: iframe/3rd-party cookies blocked on iOS Safari');
 
           // ข้ามไป TIER 3 เลย (popup)
           await this._handleInteractionRequired({
-            errorCode: 'safari_mobile_skip_silent_methods'
+            errorCode: 'ios_webkit_skip_silent_methods'
           });
           return null;
         }
 
-        // === Desktop & Non-Safari Mobile: Unified 3-Tier Fallback Strategy ===
+        // === Desktop & Non-iOS Mobile: Unified 3-Tier Fallback Strategy ===
         console.log(`[TLM] ${deviceType} - using unified 3-tier fallback strategy`);
 
-        // 🔵 TIER 1: acquireTokenSilent (cache) - Desktop & Non-Safari Mobile
+        // 🔵 TIER 1: acquireTokenSilent (cache) - Desktop & Non-iOS Mobile
         console.log(`[TLM] ${deviceType}: Trying TIER 1 - acquireTokenSilent (cache)`);
         const silentResult = await this.performAcquireTokenSilent(options);
         if (silentResult && silentResult.accessToken) {
@@ -728,7 +766,7 @@ function setKendoLicense() {
           return silentResult;
         }
 
-        // 🔵 TIER 2: ssoSilent (M365 session) - Desktop & Non-Safari Mobile
+        // 🔵 TIER 2: ssoSilent (M365 session) - Desktop & Non-iOS Mobile
         console.log(`[TLM] ${deviceType}: TIER 1 failed, trying TIER 2 - ssoSilent (M365 session)`);
 
         try {
@@ -757,7 +795,7 @@ function setKendoLicense() {
           console.log(`[TLM] ${deviceType}: TIER 2 (ssoSilent) failed:`, ssoError.message || ssoError.errorCode);
         }
 
-        // 🔵 TIER 3: Interactive (redirect/popup) - Desktop & Non-Safari Mobile
+        // 🔵 TIER 3: Interactive (redirect/popup) - Desktop & Non-iOS Mobile
         console.log(`[TLM] ${deviceType}: TIER 1 & 2 failed, using TIER 3 - Interactive auth`);
 
         // CRITICAL FIX #1: Check just_authenticated timestamp instead of boolean
@@ -832,16 +870,45 @@ function setKendoLicense() {
       console.log('[TLM] Handling mobile-specific login');
 
       try {
-        const isSafariMobile = this._isIOSSafari();
+        const isIOSWebKit = this._isIOSWebKit();
+        const isAndroid = /Android/i.test(navigator.userAgent);
 
-        // 🚫 Safari Mobile: ไม่ทำ redirect - ใช้ popup เท่านั้น
-        if (isSafariMobile) {
-          console.log('[TLM][Safari Mobile] ⚠️ _handleMobileLogin blocked - Safari Mobile uses POPUP only, no redirect');
+        // 🚫 iOS WebKit: ไม่ทำ redirect - ใช้ popup เท่านั้น
+        if (isIOSWebKit) {
+          console.log('[TLM][iOS WebKit] ⚠️ _handleMobileLogin blocked - iOS WebKit uses POPUP only, no redirect');
           this._showSafariMobileSetupNotification();
           return;
         }
 
-        // Non-Safari Mobile: ทำ redirect ได้
+        // CRITICAL FIX #6: Android redirect optimization with attempt tracking
+        if (isAndroid) {
+          console.log('[TLM][Android] 📱 Detected Android - using redirect flow');
+
+          // Check redirect attempt counter to prevent infinite loops
+          const androidAttempts = parseInt(localStorage.getItem('tlm_android_redirect_attempts') || '0');
+          const lastAttemptTime = parseInt(localStorage.getItem('tlm_android_last_attempt_time') || '0');
+          const now = Date.now();
+
+          // Reset counter if last attempt was more than 5 minutes ago
+          if (now - lastAttemptTime > 300000) {
+            localStorage.setItem('tlm_android_redirect_attempts', '0');
+            console.log('[TLM][Android] Reset attempt counter (timeout)');
+          }
+
+          // Block if too many attempts (more than 3 in 5 minutes)
+          if (androidAttempts >= 3) {
+            console.error('[TLM][Android] Too many redirect attempts - possible loop detected');
+            console.error('[TLM][Android] Please clear browser data and try again');
+            return;
+          }
+
+          // Increment counter
+          localStorage.setItem('tlm_android_redirect_attempts', (androidAttempts + 1).toString());
+          localStorage.setItem('tlm_android_last_attempt_time', now.toString());
+          console.log(`[TLM][Android] Redirect attempt ${androidAttempts + 1}/3`);
+        }
+
+        // Non-iOS Mobile (Android, etc.): ทำ redirect ได้
         const loginRequest = {
           scopes: this._scopes,
           redirectUri: this.dynamicRedirectUri,
@@ -852,8 +919,18 @@ function setKendoLicense() {
         };
 
         localStorage.setItem('tlm_intended_url', window.location.href);
-        localStorage.setItem('tlm_just_authenticated', 'true');
+        localStorage.setItem('tlm_just_authenticated', Date.now().toString());
 
+        // CRITICAL FIX #6: Android safety timeout
+        if (isAndroid) {
+          setTimeout(() => {
+            if (!localStorage.getItem('tlm_azure_token')) {
+              console.warn('[TLM][Android] Redirect timeout - no token received');
+            }
+          }, 15000); // 15 second safety check
+        }
+
+        console.log('[TLM] Initiating mobile redirect...');
         await this.msalInstance.loginRedirect(loginRequest);
       } catch (error) {
         console.error('[TLM] Mobile login failed:', error);
@@ -1419,7 +1496,7 @@ function setKendoLicense() {
         console.log('[TLM] Valid token found in localStorage');
         this.azureToken = token;
 
-        // ✅ Safari Mobile: ซ่อน notification ถ้ามี token อยู่แล้ว
+        // ✅ iOS WebKit: ซ่อน notification ถ้ามี token อยู่แล้ว
         this._checkAndHideSafariNotification();
 
         return true;
@@ -1431,7 +1508,7 @@ function setKendoLicense() {
       if (tokenResult && tokenResult.accessToken) {
         console.log('[TLM] Initial token acquisition successful');
 
-        // ✅ Safari Mobile: ซ่อน notification เมื่อได้ token แล้ว
+        // ✅ iOS WebKit: ซ่อน notification เมื่อได้ token แล้ว
         this._checkAndHideSafariNotification();
 
         return true;
@@ -1445,9 +1522,9 @@ function setKendoLicense() {
     _handleFirstTimeAuthentication: async function () {
       console.log('[TLM] Handling first-time authentication...');
 
-      // 🚫 Safari Mobile: ไม่ควรมาถึงที่นี่ เพราะใช้ popup เท่านั้น
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ Should not reach _handleFirstTimeAuthentication - Safari Mobile uses POPUP only');
+      // 🚫 iOS WebKit: ไม่ควรมาถึงที่นี่ เพราะใช้ popup เท่านั้น
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ Should not reach _handleFirstTimeAuthentication - iOS WebKit uses POPUP only');
         // แสดง notification แทนการทำ redirect
         this._showSafariMobileSetupNotification();
         return false;
@@ -1495,15 +1572,15 @@ function setKendoLicense() {
         if (this._isMobileDevice()) {
           console.log('[TLM] Mobile device - initiating mobile-friendly authentication');
 
-          // 🚫 Safari Mobile: ไม่ทำ redirect - ใช้ popup เท่านั้น
-          if (this._isIOSSafari()) {
-            console.log('[TLM][Safari Mobile] ⚠️ Mobile redirect blocked - Safari Mobile uses POPUP only');
+          // 🚫 iOS WebKit: ไม่ทำ redirect - ใช้ popup เท่านั้น
+          if (this._isIOSWebKit()) {
+            console.log('[TLM][iOS WebKit] ⚠️ Mobile redirect blocked - iOS WebKit uses POPUP only');
             this._showSafariMobileSetupNotification();
             this._authenticationInProgress = false;
             return false;
           }
 
-          // Non-Safari Mobile: ตรวจสอบว่าอยู่ในกระบวนการ redirect อยู่หรือไม่
+          // Non-iOS Mobile: ตรวจสอบว่าอยู่ในกระบวนการ redirect อยู่หรือไม่
           const existingIntendedUrl = localStorage.getItem('tlm_intended_url');
           if (existingIntendedUrl && existingIntendedUrl === window.location.href) {
             console.log('[TLM] Already in redirect process, waiting...');
@@ -1515,7 +1592,7 @@ function setKendoLicense() {
           // CRITICAL FIX #1: Store timestamp instead of boolean
           localStorage.setItem('tlm_just_authenticated', Date.now().toString());
 
-          // Non-Safari Mobile: สำหรับ Android และ mobile อื่นๆ
+          // Non-iOS Mobile: สำหรับ Android และ mobile อื่นๆ
           const loginRequest = {
             scopes: this._scopes,
             redirectUri: this.dynamicRedirectUri,
@@ -1526,7 +1603,7 @@ function setKendoLicense() {
           };
 
           try {
-            console.log('[TLM] Non-Safari Mobile: Starting loginRedirect...');
+            console.log('[TLM] Non-iOS Mobile: Starting loginRedirect...');
             await this.msalInstance.loginRedirect(loginRequest);
             return new Promise(() => { }); // Never resolve, wait for redirect
           } catch (redirectError) {
@@ -1538,7 +1615,7 @@ function setKendoLicense() {
               localStorage.setItem('tlm_aad_loop_detected', 'true');
             }
 
-            // Fallback สำหรับ non-Safari mobile
+            // Fallback สำหรับ non-iOS mobile
             this._showMobileAuthDialog();
             return false;
           }
@@ -1639,28 +1716,28 @@ function setKendoLicense() {
     },
 
     // ===================================================
-    // Safari Mobile Popup Authentication Handler (SIMPLE - NO GUIDANCE)
+    // iOS WebKit Popup Authentication Handler (SIMPLE - NO GUIDANCE)
     // ===================================================
     _safariMobilePopupAuth: async function () {
-      console.log('[TLM][Safari Mobile] 🚀 Starting simple popup authentication...');
+      console.log('[TLM][iOS WebKit] 🚀 Starting simple popup authentication...');
 
       // SIMPLE MODE: ถ้า popup block ก็ไม่ทำอะไร ไม่แสดง guidance
       // ให้ notification bar ด้านบนจัดการแทน
       try {
         return await this._performSafariPopupLogin();
       } catch (error) {
-        console.log('[TLM][Safari Mobile] Popup authentication failed:', error.errorCode || error.message);
+        console.log('[TLM][iOS WebKit] Popup authentication failed:', error.errorCode || error.message);
         // ไม่ทำอะไร - ปล่อยให้ระบบแสดง notification เอง
         return false;
       }
     },
 
     /**
-     * Show Safari Mobile Setup Notification (Minimal UI)
-     * แสดงเฉพาะเมื่อไม่มี token บน Safari Mobile
+     * Show iOS WebKit Setup Notification (Minimal UI)
+     * แสดงเฉพาะเมื่อไม่มี token บน iOS WebKit (Safari/Chrome/Edge)
      */
     _showSafariMobileSetupNotification: function () {
-      console.log('[TLM][Safari Mobile] 📢 _showSafariMobileSetupNotification called');
+      console.log('[TLM][iOS WebKit] 📢 _showSafariMobileSetupNotification called');
 
       // ตรวจสอบว่ามี token อยู่แล้วหรือไม่ - ถ้ามีก็ไม่ต้องแสดง notification
       const cachedToken = localStorage.getItem('tlm_azure_token');
@@ -1668,18 +1745,50 @@ function setKendoLicense() {
       const now = Date.now();
 
       if (cachedToken && tokenExpiry && parseInt(tokenExpiry) > now) {
-        console.log('[TLM][Safari Mobile] Token exists - hiding notification instead of showing');
+        console.log('[TLM][iOS WebKit] Token exists - hiding notification instead of showing');
         this._hideSafariMobileSetupNotification();
         return;
       }
 
       // ตรวจสอบว่ามี notification อยู่แล้วหรือไม่
       if (document.getElementById('tlm-safari-noti')) {
-        console.log('[TLM][Safari Mobile] Notification already exists, skipping');
+        console.log('[TLM][iOS WebKit] Notification already exists, skipping');
         return;
       }
 
-      console.log('[TLM][Safari Mobile] Creating notification element...');
+      console.log('[TLM][iOS WebKit] Creating notification element...');
+
+      // CRITICAL FIX #5: Detect specific iOS browser name
+      const ua = navigator.userAgent;
+      const browserName = this._getIOSBrowserName(ua);
+      console.log('[TLM][iOS WebKit] Detected browser:', browserName);
+
+      // CRITICAL FIX #5: Browser-specific instructions
+      let browserInstructions = '';
+      if (browserName === 'Safari') {
+        browserInstructions = `
+          <div style="font-size: 14px; color: #323130; line-height: 1.5;">
+            เลื่อนลงมาและเลือก <strong>Safari</strong>
+          </div>`;
+      } else if (browserName === 'Chrome') {
+        browserInstructions = `
+          <div style="font-size: 14px; color: #323130; line-height: 1.5;">
+            เลื่อนลงมาและเลือก <strong>Chrome</strong><br>
+            <span style="font-size: 12px; color: #605e5c;">(ไอคอนวงกลม สีแดง เหลือง เขียว น้ำเงิน)</span>
+          </div>`;
+      } else if (browserName === 'Edge') {
+        browserInstructions = `
+          <div style="font-size: 14px; color: #323130; line-height: 1.5;">
+            เลื่อนลงมาและเลือก <strong>Edge</strong><br>
+            <span style="font-size: 12px; color: #605e5c;">(ไอคอนรูปคลื่น สีน้ำเงิน)</span>
+          </div>`;
+      } else {
+        browserInstructions = `
+          <div style="font-size: 14px; color: #323130; line-height: 1.5;">
+            เลื่อนลงมาและเลือก <strong>${browserName}</strong><br>
+            <span style="font-size: 12px; color: #605e5c;">(เบราว์เซอร์ที่คุณกำลังใช้งาน)</span>
+          </div>`;
+      }
 
       const noti = document.createElement('div');
       noti.id = 'tlm-safari-noti';
@@ -1743,7 +1852,7 @@ function setKendoLicense() {
             font-weight: 600;
             color: #ffffff;
             letter-spacing: -0.3px;
-          ">ต้องการความช่วยเหลือ</div>
+          ">ต้องการความช่วยเหลือ (${browserName})</div>
         </div>
 
         <!-- Content -->
@@ -1823,12 +1932,7 @@ function setKendoLicense() {
                   flex-shrink: 0;
                   margin-top: 1px;
                 ">2</div>
-                <div style="
-                  font-size: 14px;
-                  color: #323130;
-                  line-height: 1.5;
-                ">เลื่อนลงมาและเลือก <strong>Safari</strong><br>
-                <span style="font-size: 12px; color: #605e5c;">(สำหรับ Chrome หรือ Edge ให้เลือกเบราว์เซอร์ที่คุณใช้งาน)</span></div>
+                ${browserInstructions}
               </div>
             </div>
 
@@ -1952,12 +2056,12 @@ function setKendoLicense() {
       `;
 
       document.body.appendChild(noti);
-      console.log('[TLM][Safari Mobile] ✅ Notification element appended to body');
+      console.log('[TLM][iOS WebKit] ✅ Notification element appended to body');
 
       // 🔥 CRITICAL FIX: Login button handler - Trigger authentication DIRECTLY (no reload)
       // This fixes the infinite loop issue where button reload → no token → shows notification again
       document.getElementById('tlm-safari-refresh-btn').addEventListener('click', async () => {
-        console.log('[TLM][Safari Mobile] 🔐 Login button clicked');
+        console.log('[TLM][iOS WebKit] 🔐 Login button clicked');
 
         // Visual feedback
         const btn = document.getElementById('tlm-safari-refresh-btn');
@@ -1969,7 +2073,7 @@ function setKendoLicense() {
 
         try {
           // CRITICAL: Reset attempt counter BEFORE calling auth (allows retry)
-          console.log('[TLM][Safari Mobile] Resetting popup attempt counter');
+          console.log('[TLM][iOS WebKit] Resetting popup attempt counter');
           tlm.global._safariPopupAttempts = 0;
           sessionStorage.removeItem('tlm_safari_popup_attempts'); // Changed from localStorage
           localStorage.removeItem('tlm_safari_last_attempt_time');
@@ -1979,16 +2083,16 @@ function setKendoLicense() {
 
           // CRITICAL FIX: Call authentication DIRECTLY instead of location.reload()
           // This allows immediate authentication without page reload
-          console.log('[TLM][Safari Mobile] Calling _performSafariPopupLogin() directly...');
+          console.log('[TLM][iOS WebKit] Calling _performSafariPopupLogin() directly...');
           const success = await tlm.global._performSafariPopupLogin();
 
           if (success) {
-            console.log('[TLM][Safari Mobile] ✅ Authentication successful via button');
+            console.log('[TLM][iOS WebKit] ✅ Authentication successful via button');
             // Notification hides automatically in _performSafariPopupLogin
             // No reload needed - token is ready immediately for AJAX calls
           } else {
             // Authentication failed (user cancelled or popup blocked)
-            console.log('[TLM][Safari Mobile] ⚠️ Authentication failed or cancelled');
+            console.log('[TLM][iOS WebKit] ⚠️ Authentication failed or cancelled');
 
             // Restore button state
             btn.innerHTML = originalText;
@@ -2026,7 +2130,7 @@ function setKendoLicense() {
             }
           }
         } catch (error) {
-          console.error('[TLM][Safari Mobile] ❌ Button handler error:', error);
+          console.error('[TLM][iOS WebKit] ❌ Button handler error:', error);
 
           // Restore button state on error
           btn.innerHTML = originalText;
@@ -2043,35 +2147,35 @@ function setKendoLicense() {
         }
       });
 
-      console.log('[TLM][Safari Mobile] 📢 Safari Mobile setup notification displayed successfully');
+      console.log('[TLM][iOS WebKit] 📢 iOS WebKit setup notification displayed successfully');
     },
 
     /**
-     * Hide Safari Mobile Setup Notification
+     * Hide iOS WebKit Setup Notification
      * ซ่อนเมื่อได้ token แล้ว
      */
     _hideSafariMobileSetupNotification: function () {
-      console.log('[TLM][Safari Mobile] 🔇 _hideSafariMobileSetupNotification called');
+      console.log('[TLM][iOS WebKit] 🔇 _hideSafariMobileSetupNotification called');
       const noti = document.getElementById('tlm-safari-noti');
       if (noti) {
-        console.log('[TLM][Safari Mobile] Found notification element, removing...');
+        console.log('[TLM][iOS WebKit] Found notification element, removing...');
         noti.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => {
           noti.remove();
-          console.log('[TLM][Safari Mobile] ✅ Safari Mobile setup notification hidden');
+          console.log('[TLM][iOS WebKit] ✅ iOS WebKit setup notification hidden');
         }, 300);
       } else {
-        console.log('[TLM][Safari Mobile] No notification element found to hide');
+        console.log('[TLM][iOS WebKit] No notification element found to hide');
       }
     },
 
     /**
-     * Check and hide Safari Mobile notification if token exists
+     * Check and hide iOS WebKit notification if token exists
      * เรียกใช้เมื่อ page load หรือเมื่อได้ token
      */
     _checkAndHideSafariNotification: function () {
-      if (!this._isIOSSafari()) {
-        return; // ไม่ใช่ Safari Mobile ไม่ต้องทำอะไร
+      if (!this._isIOSWebKit()) {
+        return; // ไม่ใช่ iOS WebKit ไม่ต้องทำอะไร
       }
 
       const cachedToken = localStorage.getItem('tlm_azure_token');
@@ -2080,92 +2184,122 @@ function setKendoLicense() {
 
       // ถ้ามี token ที่ valid ให้ซ่อน notification
       if (cachedToken && tokenExpiry && parseInt(tokenExpiry) > now) {
-        console.log('[TLM][Safari Mobile] Valid token found - hiding notification');
+        console.log('[TLM][iOS WebKit] Valid token found - hiding notification');
         this._hideSafariMobileSetupNotification();
 
-        // Reset popup attempts counter เมื่อมี token (sessionStorage)
+        // CRITICAL FIX #4: Reset ALL popup attempts counters and flags
         sessionStorage.removeItem('tlm_safari_popup_attempts');
         localStorage.removeItem('tlm_safari_last_attempt_time');
+        this._safariPopupAttempts = 0; // Reset memory counter
+        this._waitingForToken = false; // Clear waiting state
+        this._tokenReady = true; // Set token ready flag
+        console.log('[TLM][iOS WebKit] All counters and flags reset');
+
+        // CRITICAL FIX #4: Verify MSAL account state
+        if (this.msalInstance) {
+          const accounts = this.msalInstance.getAllAccounts();
+          if (accounts.length > 0) {
+            const activeAccount = this.msalInstance.getActiveAccount();
+            if (!activeAccount) {
+              this.msalInstance.setActiveAccount(accounts[0]);
+              console.log('[TLM][iOS WebKit] Set active account:', accounts[0].username);
+            }
+          }
+        }
+
+        // CRITICAL FIX #4: Dispatch dashboard ready event for app to proceed
+        window.dispatchEvent(new CustomEvent('tlm_ready_for_dashboard'));
+        console.log('[TLM][iOS WebKit] Dashboard ready event dispatched');
       }
     },
 
     /**
-     * Perform popup authentication for Safari Mobile (NO RELOAD)
+     * Perform popup authentication for iOS WebKit (Safari/Chrome/Edge) - NO RELOAD
      * Returns Promise<boolean> - true if successful, false if failed
      */
     _performSafariPopupLogin: async function () {
-      console.log('[TLM][Safari Mobile] 🚀 Performing popup authentication (NO RELOAD)...');
+      console.log('[TLM][iOS WebKit] 🚀 Performing popup authentication (NO RELOAD)...');
 
       try {
-        // 🔥 CRITICAL: Clear ALL MSAL interaction locks before popup
-        console.log('[TLM][Safari Mobile] 🗑️ Clearing all MSAL interaction locks...');
+        // 🔥 CRITICAL FIX #2: Clear ALL MSAL interaction locks comprehensively before popup
+        console.log('[TLM][iOS WebKit] 🗑️ Clearing all MSAL interaction locks...');
 
         const allKeys = Object.keys(localStorage);
         const lockKeys = allKeys.filter(k =>
           k.includes('interaction.status') ||
           k.includes('interaction_status') ||
+          k.includes('interaction_in_progress') || // ADDED: New pattern for iOS
           k.includes('msal.interaction') ||
           k.includes('.interaction.') ||
+          k.includes('.auth.request.') || // ADDED: Auth request pattern for stuck requests
           k.startsWith('msal.') && k.includes('interaction')
         );
 
         if (lockKeys.length > 0) {
-          console.log(`[TLM][Safari Mobile] 🗑️ Found ${lockKeys.length} MSAL lock keys:`, lockKeys);
+          console.log(`[TLM][iOS WebKit] 🗑️ Found ${lockKeys.length} MSAL lock keys:`, lockKeys);
           lockKeys.forEach(key => {
             localStorage.removeItem(key);
-            console.log(`[TLM][Safari Mobile] 🗑️ Removed: ${key}`);
+            console.log(`[TLM][iOS WebKit] 🗑️ Removed: ${key}`);
           });
         }
 
-        // Also clear sessionStorage locks
+        // Also clear sessionStorage locks with expanded patterns
         const sessionLockKeys = Object.keys(sessionStorage).filter(k =>
           k.includes('interaction.status') ||
           k.includes('interaction_status') ||
-          k.includes('msal.interaction')
+          k.includes('interaction_in_progress') || // ADDED: New pattern
+          k.includes('msal.interaction') ||
+          k.includes('.auth.request.') // ADDED: Auth request pattern
         );
 
         if (sessionLockKeys.length > 0) {
-          console.log(`[TLM][Safari Mobile] 🗑️ Found ${sessionLockKeys.length} sessionStorage lock keys`);
+          console.log(`[TLM][iOS WebKit] 🗑️ Found ${sessionLockKeys.length} sessionStorage lock keys`);
           sessionLockKeys.forEach(key => {
             sessionStorage.removeItem(key);
-            console.log(`[TLM][Safari Mobile] 🗑️ Removed from session: ${key}`);
+            console.log(`[TLM][iOS WebKit] 🗑️ Removed from session: ${key}`);
           });
         }
 
-        // Small delay to ensure locks are fully cleared
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // CRITICAL FIX #2: Increase delay from 500ms to 800ms for iOS
+        // iOS WebKit needs more time to fully process localStorage operations
+        console.log('[TLM][iOS WebKit] ⏳ Waiting 800ms for lock clear to settle on iOS...');
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-        // Build login request
+        // CRITICAL FIX #2: Add iOS-specific parameters for better compatibility
         const loginRequest = {
           scopes: this._scopes,
           redirectUri: this.dynamicRedirectUri,
-          prompt: 'select_account'
+          prompt: 'select_account',
+          extraQueryParameters: {
+            domain_hint: 'organizations', // Hint for organizational accounts
+            login_hint: localStorage.getItem('tlm_last_login_hint') || undefined // Reuse last login if available
+          }
         };
 
         // � FIX: ใช้ loginPopup โดยตรงเพื่อป้องกัน account picker ขึ้น 2 ครั้ง
         // เมื่อผู้ใช้ clear cache, acquireTokenPopup จะ fail และ fallback ไป loginPopup
         // ทำให้เห็น account picker 2 ครั้ง → ใช้ loginPopup เลยจะเห็นครั้งเดียว
-        console.log('[TLM][Safari Mobile] � Calling loginPopup (single account picker)...');
+        console.log('[TLM][iOS WebKit] 🔓 Calling loginPopup (single account picker)...');
         const popupResult = await this.msalInstance.loginPopup(loginRequest);
 
         if (popupResult && popupResult.accessToken) {
           // 🔒 SECURITY: Verify popup origin to prevent phishing attacks
           const expectedOrigin = 'https://login.microsoftonline.com';
           if (popupResult.authority && !popupResult.authority.startsWith(expectedOrigin)) {
-            console.error('[TLM][Safari Mobile] 🚨 SECURITY WARNING: Unexpected popup origin:', popupResult.authority);
-            console.error('[TLM][Safari Mobile] Expected:', expectedOrigin);
-            console.error('[TLM][Safari Mobile] Received:', popupResult.authority);
+            console.error('[TLM][iOS WebKit] 🚨 SECURITY WARNING: Unexpected popup origin:', popupResult.authority);
+            console.error('[TLM][iOS WebKit] Expected:', expectedOrigin);
+            console.error('[TLM][iOS WebKit] Received:', popupResult.authority);
             // Don't use the token - potential phishing attempt
             return false;
           }
 
-          console.log('[TLM][Safari Mobile] ✅ Token acquired successfully from verified origin');
+          console.log('[TLM][iOS WebKit] ✅ Token acquired successfully from verified origin');
 
           // Reset popup attempt counter on success (both memory and sessionStorage)
           this._safariPopupAttempts = 0;
           sessionStorage.removeItem('tlm_safari_popup_attempts');
           localStorage.removeItem('tlm_safari_last_attempt_time');
-          console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter and cleared attempt history');
+          console.log('[TLM][iOS WebKit] ♻️ Reset popup attempt counter and cleared attempt history');
 
           // Set active account
           this.msalInstance.setActiveAccount(popupResult.account);
@@ -2186,7 +2320,7 @@ function setKendoLicense() {
 
           // Dispatch event
           window.dispatchEvent(new CustomEvent('tlm_token_ready'));
-          console.log('[TLM][Safari Mobile] 📢 Token ready event dispatched');
+          console.log('[TLM][iOS WebKit] 📢 Token ready event dispatched');
 
           // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
           this._hideSafariMobileSetupNotification();
@@ -2199,34 +2333,34 @@ function setKendoLicense() {
           // Update status
           if (this.checkCurrentTokenStatus) {
             const status = this.checkCurrentTokenStatus();
-            console.log('[TLM][Safari Mobile] ✅ Token status:', status);
+            console.log('[TLM][iOS WebKit] ✅ Token status:', status);
           }
 
-          console.log('[TLM][Safari Mobile] ✅ Authentication complete - NO RELOAD, ready to use');
+          console.log('[TLM][iOS WebKit] ✅ Authentication complete - NO RELOAD, ready to use');
           return true;
 
         } else {
-          console.error('[TLM][Safari Mobile] ❌ No access token in result');
+          console.error('[TLM][iOS WebKit] ❌ No access token in result');
           return false;
         }
 
       } catch (error) {
-        console.error('[TLM][Safari Mobile] ❌ Popup authentication error:', error);
+        console.error('[TLM][iOS WebKit] ❌ Popup authentication error:', error);
 
         // Check error type
         if (error.errorCode === 'user_cancelled') {
-          console.log('[TLM][Safari Mobile] User cancelled popup');
+          console.log('[TLM][iOS WebKit] User cancelled popup');
           return false;
         }
 
         if (error.errorCode === 'popup_window_error' ||
           (error.message && error.message.includes('popup'))) {
-          console.warn('[TLM][Safari Mobile] Popup blocked error');
+          console.warn('[TLM][iOS WebKit] Popup blocked error');
           // Will retry from _safariMobilePopupAuth
           return false;
         }
 
-        console.error('[TLM][Safari Mobile] Unexpected error:', error);
+        console.error('[TLM][iOS WebKit] Unexpected error:', error);
         return false;
       }
     },
@@ -2235,9 +2369,9 @@ function setKendoLicense() {
     validateAndRefreshToken: async function () {
       if (this._disposed) return false;
 
-      // Safari Mobile: STOP - no token refresh allowed
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ validateAndRefreshToken blocked - popup authentication only');
+      // iOS WebKit: STOP - no token refresh allowed
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ validateAndRefreshToken blocked - popup authentication only');
         this._showSafariMobileSetupNotification();
         return false;
       }
@@ -2294,9 +2428,9 @@ function setKendoLicense() {
 
     // Enhanced Token Refresh Process
     _performEnhancedTokenRefresh: async function () {
-      // Safari Mobile: STOP - should never reach here
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ _performEnhancedTokenRefresh should not be called');
+      // iOS WebKit: STOP - should never reach here
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ _performEnhancedTokenRefresh should not be called');
         this._showSafariMobileSetupNotification();
         return false;
       }
@@ -2354,9 +2488,9 @@ function setKendoLicense() {
     _forceLogin: async function () {
       console.log("[TLM] Forcing login...");
 
-      // 🚫 Safari Mobile: ไม่ทำ redirect - แสดง notification
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ _forceLogin blocked - Safari Mobile uses POPUP only');
+      // 🚫 iOS WebKit: ไม่ทำ redirect - แสดง notification
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ _forceLogin blocked - iOS WebKit uses POPUP only');
         this._showSafariMobileSetupNotification();
         return false;
       }
@@ -2450,7 +2584,7 @@ function setKendoLicense() {
         },
         cache: {
           // ปรับ cache strategy ตาม device
-          cacheLocation: this._isIOSSafari() ? "sessionStorage" : "localStorage",
+          cacheLocation: this._isIOSWebKit() ? "sessionStorage" : "localStorage",
           storeAuthStateInCookie: true,
           secureCookies: window.location.protocol === "https:",
           claimsBasedCachingEnabled: true,
@@ -2475,7 +2609,7 @@ function setKendoLicense() {
                 message && message.includes(error)
               );
 
-              if (shouldSuppress && (this._isIOSSafari() || this._isMobileDevice())) {
+              if (shouldSuppress && (this._isIOSWebKit() || this._isMobileDevice())) {
                 // Log เฉพาะเมื่อเป็น debug mode
                 if (window.location.search.includes('debug=1')) {
                   console.debug(`[MSAL-Mobile] Suppressed: ${message}`);
@@ -2498,12 +2632,12 @@ function setKendoLicense() {
             logLevel: msal.LogLevel.Warning
           },
           // ปรับ timeout ตาม device type
-          windowHashTimeout: this._isIOSSafari() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
-          iframeHashTimeout: this._isIOSSafari() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
-          loadFrameTimeout: this._isIOSSafari() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
+          windowHashTimeout: this._isIOSWebKit() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
+          iframeHashTimeout: this._isIOSWebKit() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
+          loadFrameTimeout: this._isIOSWebKit() ? 180000 : (this._isMobileDevice() ? 120000 : 60000),
           allowNativeBroker: false,
           allowRedirectInIframe: !this._isMobileDevice(), // ปิดการใช้ iframe บน mobile
-          networkRequestTimeout: this._isIOSSafari() ? 90000 : (this._isMobileDevice() ? 60000 : 30000),
+          networkRequestTimeout: this._isIOSWebKit() ? 90000 : (this._isMobileDevice() ? 60000 : 30000),
           telemetry: {
             applicationName: "TOPCool",
             applicationVersion: "2.0.0"
@@ -2572,10 +2706,10 @@ function setKendoLicense() {
 
               console.log('[TLM] Token stored successfully after redirect');
 
-              // สำหรับ Safari Mobile: รอให้ token พร้อมก่อน app เรียก ajax
-              if (this._isIOSSafari()) {
+              // สำหรับ iOS WebKit: รอให้ token พร้อมก่อน app เรียก ajax
+              if (this._isIOSWebKit()) {
                 await new Promise(resolve => setTimeout(resolve, 500));
-                console.log('[TLM] Safari Mobile: Token ready for use');
+                console.log('[TLM] iOS WebKit: Token ready for use');
 
                 // ✅ ซ่อน Safari notification เมื่อได้ token แล้ว
                 this._checkAndHideSafariNotification();
@@ -2587,11 +2721,14 @@ function setKendoLicense() {
             if (intendedUrl && intendedUrl !== window.location.href) {
               localStorage.removeItem('tlm_intended_url');
 
-              // CRITICAL FIX #2: Increase delay to ensure token fully saved (1500ms/1000ms instead of 1000ms/500ms)
-              // รอให้ token save เสร็จก่อน redirect (สำคัญสำหรับ mobile)
+              // CRITICAL FIX #3: Increase delay to ensure token fully saved
+              // iOS WebKit needs more time: 2000ms vs Desktop: 1000ms
+              // รอให้ token save เสร็จก่อน redirect (สำคัญสำหรับ iOS mobile)
+              const redirectDelay = this._isIOSWebKit() ? 2000 : (this._isMobileDevice() ? 1500 : 1000);
+              console.log(`[TLM] Redirecting to intended URL in ${redirectDelay}ms...`);
               setTimeout(() => {
                 window.location.href = intendedUrl;
-              }, this._isMobileDevice() ? 1500 : 1000);
+              }, redirectDelay);
               return; // Stop here to prevent further processing
             }
           } else {
@@ -2622,7 +2759,7 @@ function setKendoLicense() {
                 console.log('[TLM] Auto selected first available account:', accounts[0].username);
               }
 
-              // ✅ Safari Mobile: ซ่อน notification ถ้ามี token อยู่แล้ว
+              // ✅ iOS WebKit: ซ่อน notification ถ้ามี token อยู่แล้ว
               this._checkAndHideSafariNotification();
             }
           }
@@ -2656,7 +2793,7 @@ function setKendoLicense() {
         console.log('[TLM] Enhanced MSAL initialization completed for ' +
           (this._isMobileDevice() ? 'mobile' : 'desktop'));
 
-        // ✅ Safari Mobile: ตรวจสอบและซ่อน notification หลัง MSAL initialization
+        // ✅ iOS WebKit: ตรวจสอบและซ่อน notification หลัง MSAL initialization
         this._checkAndHideSafariNotification();
 
       } catch (error) {
@@ -2713,10 +2850,10 @@ function setKendoLicense() {
         if (this.msalInstance) {
           const accounts = this.msalInstance.getAllAccounts();
 
-          // Safari Mobile: หลัง redirect localStorage อาจเป็น null แต่ MSAL cache มี account
+          // iOS WebKit: หลัง redirect localStorage อาจเป็น null แต่ MSAL cache มี account
           // ต้องดึง token จาก MSAL cache
           if (accounts.length > 0 && (!cachedToken || !this.azureToken)) {
-            console.log("[TLM] Safari Mobile: Recovering token from MSAL cache after redirect");
+            console.log("[TLM] iOS WebKit: Recovering token from MSAL cache after redirect");
             const tokenResult = await this.acquireTokenWithFallback();
 
             if (tokenResult && tokenResult.accessToken) {
@@ -2725,9 +2862,9 @@ function setKendoLicense() {
           } else if (accounts.length === 0 && (!cachedToken || parseInt(tokenExpiry) <= now)) {
             console.log("[TLM] No accounts and no valid token, attempting enhanced token acquisition...");
 
-            // 🚫 Safari Mobile: ไม่พยายาม acquire token - แสดง notification แล้วหยุด
-            if (this._isIOSSafari()) {
-              console.log('[TLM][Safari Mobile] ⚠️ No token - showing notification and stopping');
+            // 🚫 iOS WebKit: ไม่พยายาม acquire token - แสดง notification แล้วหยุด
+            if (this._isIOSWebKit()) {
+              console.log('[TLM][iOS WebKit] ⚠️ No token - showing notification and stopping');
               this._showSafariMobileSetupNotification();
               if (_options.error) {
                 _options.error({
@@ -2756,9 +2893,9 @@ function setKendoLicense() {
       if (!currentCachedToken || !currentTokenExpiry || parseInt(currentTokenExpiry) <= now) {
         console.log("[TLM] Token expired or missing, validating...");
 
-        // 🚫 Safari Mobile: ไม่พยายาม refresh token - แสดง notification แล้วหยุด
-        if (this._isIOSSafari()) {
-          console.log('[TLM][Safari Mobile] ⚠️ Token expired/missing - showing notification and stopping');
+        // 🚫 iOS WebKit: ไม่พยายาม refresh token - แสดง notification แล้วหยุด
+        if (this._isIOSWebKit()) {
+          console.log('[TLM][iOS WebKit] ⚠️ Token expired/missing - showing notification and stopping');
           this._showSafariMobileSetupNotification();
           if (_options.error) {
             _options.error({
@@ -2786,9 +2923,9 @@ function setKendoLicense() {
       }
       // Enhanced background refresh for expiring tokens
       else if (parseInt(currentTokenExpiry) - now < (5 * 60 * 1000)) {
-        // Safari Mobile: STOP - no background refresh
-        if (this._isIOSSafari()) {
-          console.log('[TLM][Safari Mobile] ⚠️ Token expiring - skipping background refresh');
+        // iOS WebKit: STOP - no background refresh
+        if (this._isIOSWebKit()) {
+          console.log('[TLM][iOS WebKit] ⚠️ Token expiring - skipping background refresh');
           // Don't show notification yet - token still valid
         } else {
           console.log("[TLM] Token expiring soon, enhanced background refresh...");
@@ -2816,9 +2953,9 @@ function setKendoLicense() {
       // Enhanced final attempt if no token
       console.log("[TLM] No token available, attempting enhanced final validation...");
 
-      // Safari Mobile: STOP - no final token acquisition
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ Final token acquisition blocked');
+      // iOS WebKit: STOP - no final token acquisition
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ Final token acquisition blocked');
         this._showSafariMobileSetupNotification();
         if (_options.error) {
           _options.error({
@@ -2876,23 +3013,23 @@ function setKendoLicense() {
           const tokenStatus = this.checkCurrentTokenStatus();
 
           console.log('[TLM][Token Checker] Current status:', {
-            isSafariMobile: this._isIOSSafari(),
+            isIOSWebKit: this._isIOSWebKit(),
             tokenValid: tokenStatus.valid,
             minutesLeft: tokenStatus.minutesLeft
           });
 
-          // ⚠️ Safari Mobile: แสดง notification ถ้าไม่มี token
-          if (this._isIOSSafari() && !tokenStatus.valid) {
-            console.log('[TLM][Token Checker] Safari Mobile detected with invalid token - showing notification');
+          // ⚠️ iOS WebKit: แสดง notification ถ้าไม่มี token
+          if (this._isIOSWebKit() && !tokenStatus.valid) {
+            console.log('[TLM][Token Checker] iOS WebKit detected with invalid token - showing notification');
             this._showSafariMobileSetupNotification();
-            // หยุด token checker สำหรับ Safari Mobile ที่ไม่มี token
-            console.log('[TLM][Safari Mobile] Stopping token checker - no token');
+            // หยุด token checker สำหรับ iOS WebKit ที่ไม่มี token
+            console.log('[TLM][iOS WebKit] Stopping token checker - no token');
             clearInterval(this._autoTokenChecker);
             return;
           }
-          // ✅ Safari Mobile: ซ่อน notification ถ้ามี token แล้ว
-          else if (this._isIOSSafari() && tokenStatus.valid) {
-            console.log('[TLM][Token Checker] Safari Mobile detected with valid token - hiding notification');
+          // ✅ iOS WebKit: ซ่อน notification ถ้ามี token แล้ว
+          else if (this._isIOSWebKit() && tokenStatus.valid) {
+            console.log('[TLM][Token Checker] iOS WebKit detected with valid token - hiding notification');
             this._hideSafariMobileSetupNotification();
           }
 
@@ -2902,13 +3039,13 @@ function setKendoLicense() {
             return;
           }
 
-          // 🚫 Safari Mobile: ไม่ทำ token refresh - ใช้ popup เท่านั้น
-          if (this._isIOSSafari()) {
-            console.log('[TLM][Safari Mobile] Skipping auto token refresh - popup authentication only');
+          // 🚫 iOS WebKit: ไม่ทำ token refresh - ใช้ popup เท่านั้น
+          if (this._isIOSWebKit()) {
+            console.log('[TLM][iOS WebKit] Skipping auto token refresh - popup authentication only');
             return;
           }
 
-          // Smart refresh logic - only refresh if less than threshold but not expired (Non-Safari Mobile only)
+          // Smart refresh logic - only refresh if less than threshold but not expired (Non-iOS Mobile only)
           if (tokenStatus.minutesLeft < this.TOKEN_REFRESH_THRESHOLD_MINUTES &&
             tokenStatus.minutesLeft > 0) {
             if (!this._tokenRefreshInProgress) {
@@ -2919,9 +3056,9 @@ function setKendoLicense() {
 
           // Enhanced account recovery if needed
           if (tokenStatus.valid && !tokenStatus.hasAccounts && this.msalInstance) {
-            // Safari Mobile: STOP - no account recovery
-            if (this._isIOSSafari()) {
-              console.log('[TLM][Safari Mobile] ⚠️ Account recovery blocked');
+            // iOS WebKit: STOP - no account recovery
+            if (this._isIOSWebKit()) {
+              console.log('[TLM][iOS WebKit] ⚠️ Account recovery blocked');
             } else {
               console.log('[TLM] Valid token but no accounts, attempting account recovery...');
               try {
@@ -3101,9 +3238,9 @@ function setKendoLicense() {
           if (!hasPreviousLogin) {
             console.log('[TLM] First-time login detected.');
 
-            // 🚫 Safari Mobile: ไม่ทำ redirect - ให้ notification จัดการแทน
-            if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
-              console.log('[TLM][Safari Mobile] ⚠️ Skipping redirect - notification already shown');
+            // 🚫 iOS WebKit: ไม่ทำ redirect - ให้ notification จัดการแทน
+            if (tlm.global._isIOSWebKit && tlm.global._isIOSWebKit()) {
+              console.log('[TLM][iOS WebKit] ⚠️ Skipping redirect - notification already shown');
               tlm.global._handling401Error = false;
               return;
             }
@@ -3111,7 +3248,7 @@ function setKendoLicense() {
             localStorage.setItem('tlm_intended_url', window.location.href);
 
             if (tlm.global.msalInstance) {
-              // Enhanced redirect attempt (Desktop & Non-Safari Mobile only)
+              // Enhanced redirect attempt (Desktop & Non-iOS Mobile only)
               tlm.global.msalInstance.loginRedirect({
                 scopes: tlm.global._scopes,
                 redirectUri: tlm.global.dynamicRedirectUri,
@@ -3141,9 +3278,9 @@ function setKendoLicense() {
           // Enhanced recovery attempt
           const attemptEnhancedRecovery = async () => {
             try {
-              // Safari Mobile: STOP - no enhanced recovery
-              if (tlm.global._isIOSSafari()) {
-                console.log('[TLM][Safari Mobile] ⚠️ Enhanced recovery blocked - showing notification');
+              // iOS WebKit: STOP - no enhanced recovery
+              if (tlm.global._isIOSWebKit()) {
+                console.log('[TLM][iOS WebKit] ⚠️ Enhanced recovery blocked - showing notification');
                 tlm.global._showSafariMobileSetupNotification();
                 tlm.global._handling401Error = false;
                 return;
@@ -3436,11 +3573,11 @@ function setKendoLicense() {
       // Enhanced token acquisition using modern patterns
       console.log("[TLM] Getting new token with enhanced methods...");
 
-      // Safari Mobile: STOP - no token acquisition
-      if (this._isIOSSafari()) {
-        console.log('[TLM][Safari Mobile] ⚠️ getAzureToken blocked - showing notification');
+      // iOS WebKit: STOP - no token acquisition
+      if (this._isIOSWebKit()) {
+        console.log('[TLM][iOS WebKit] ⚠️ getAzureToken blocked - showing notification');
         this._showSafariMobileSetupNotification();
-        throw new Error("Safari Mobile: Token acquisition blocked - please configure Safari settings");
+        throw new Error("iOS WebKit: Token acquisition blocked - please configure Safari settings");
       }
 
       const tokenValid = await this.validateAndRefreshToken();
@@ -7963,9 +8100,9 @@ function setKendoLicense() {
       const minutesLeft = Math.floor(timeLeft / 60000);
 
       if (minutesLeft < this.TOKEN_REFRESH_THRESHOLD_MINUTES && minutesLeft > 0) {
-        // Safari Mobile: STOP - no auto refresh
-        if (this._isIOSSafari()) {
-          console.log('[TLM][Safari Mobile] ⚠️ Token expiry detected - skipping auto refresh');
+        // iOS WebKit: STOP - no auto refresh
+        if (this._isIOSWebKit()) {
+          console.log('[TLM][iOS WebKit] ⚠️ Token expiry detected - skipping auto refresh');
           return;
         }
 
@@ -8456,9 +8593,9 @@ $(document).ready(function () {
       }
 
       if (tokenStatus.status === 'EXPIRING_SOON' && tokenStatus.hasAccounts) {
-        // Safari Mobile: STOP - no background refresh
-        if (tlm.global._isIOSSafari()) {
-          console.log('[TLM][Safari Mobile] ⚠️ Token expiring - skipping background refresh in beforeSend');
+        // iOS WebKit: STOP - no background refresh
+        if (tlm.global._isIOSWebKit()) {
+          console.log('[TLM][iOS WebKit] ⚠️ Token expiring - skipping background refresh in beforeSend');
         } else {
           console.log("[TLM] Background refresh before API call...");
           tlm.global.validateAndRefreshToken().catch(error => {
@@ -8540,11 +8677,11 @@ $(document).ready(function () {
 
       // Re-initialize critical components
       if (typeof tlm !== 'undefined' && tlm.global) {
-        // Safari Mobile: STOP - no token refresh on pageshow
-        if (!tlm.global._isIOSSafari || !tlm.global._isIOSSafari()) {
+        // iOS WebKit: STOP - no token refresh on pageshow
+        if (!tlm.global._isIOSWebKit || !tlm.global._isIOSWebKit()) {
           tlm.global.validateAndRefreshToken();
         } else {
-          console.log('[TLM][Safari Mobile] ⚠️ Skipping validateAndRefreshToken on pageshow');
+          console.log('[TLM][iOS WebKit] ⚠️ Skipping validateAndRefreshToken on pageshow');
         }
       }
     }
@@ -8561,9 +8698,9 @@ $(document).ready(function () {
 
       // ตรวจสอบ token ด้วย
       if (typeof tlm !== 'undefined' && tlm.global) {
-        // Safari Mobile: STOP - no token refresh on visibility change
-        if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
-          console.log('[TLM][Safari Mobile] ⚠️ Skipping validateAndRefreshToken on visibility change');
+        // iOS WebKit: STOP - no token refresh on visibility change
+        if (tlm.global._isIOSWebKit && tlm.global._isIOSWebKit()) {
+          console.log('[TLM][iOS WebKit] ⚠️ Skipping validateAndRefreshToken on visibility change');
         } else {
           const tokenStatus = tlm.global.checkCurrentTokenStatus();
           if (tokenStatus.minutesLeft < 10) {
@@ -8711,9 +8848,9 @@ window.tlmDebug = {
   refresh: async () => {
     console.log('🔄 [TLM DEBUG] Enhanced token refresh...');
 
-    // Safari Mobile: STOP - manual refresh blocked
-    if (tlm.global._isIOSSafari && tlm.global._isIOSSafari()) {
-      console.log('[TLM][Safari Mobile] ⚠️ Manual refresh blocked - use page Refresh button');
+    // iOS WebKit: STOP - manual refresh blocked
+    if (tlm.global._isIOSWebKit && tlm.global._isIOSWebKit()) {
+      console.log('[TLM][iOS WebKit] ⚠️ Manual refresh blocked - use page Refresh button');
       tlm.global._showSafariMobileSetupNotification();
       return false;
     }
