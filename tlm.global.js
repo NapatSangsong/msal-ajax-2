@@ -408,9 +408,11 @@ function setKendoLicense() {
     _showFullLoadingCount: 0,
     _authenticationInProgress: false,
 
-    // Safari Mobile popup attempts tracking (try once only)
+    // Safari Mobile popup attempts tracking
+    // Increased from 1 to 3 to allow multiple tries before showing permanent notification
+    // This is more forgiving for cases where popup blocker might need multiple attempts
     _safariPopupAttempts: 0,
-    MAX_SAFARI_POPUP_ATTEMPTS: 1,
+    MAX_SAFARI_POPUP_ATTEMPTS: 3,
 
     /* ===============================================
        1.1. ENHANCED AUTHENTICATION & TOKEN MANAGEMENT
@@ -485,9 +487,23 @@ function setKendoLicense() {
         }
 
         // 🚫 Check max popup attempts - prevent infinite loop
-        // Load from localStorage to persist across page reloads
-        const storedAttempts = parseInt(localStorage.getItem('tlm_safari_popup_attempts') || '0');
+        // 🔥 CRITICAL FIX: Use sessionStorage instead of localStorage for attempt counter
+        // This ensures counter resets on browser close/new session instead of persisting forever
+        const storedAttempts = parseInt(sessionStorage.getItem('tlm_safari_popup_attempts') || '0');
         this._safariPopupAttempts = storedAttempts;
+
+        // 🔥 CRITICAL FIX: Add time-based reset for attempt counter (24 hour timeout)
+        // This prevents permanent blocking if user returns after long gap
+        const lastAttemptTime = parseInt(localStorage.getItem('tlm_safari_last_attempt_time') || '0');
+        const now = Date.now();
+        const ATTEMPT_RESET_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+
+        if (now - lastAttemptTime > ATTEMPT_RESET_TIMEOUT) {
+          console.log('[TLM][Safari Mobile] ♻️ Attempt counter timeout exceeded (24h) - resetting');
+          this._safariPopupAttempts = 0;
+          sessionStorage.removeItem('tlm_safari_popup_attempts');
+          localStorage.removeItem('tlm_safari_last_attempt_time');
+        }
 
         if (this._safariPopupAttempts >= this.MAX_SAFARI_POPUP_ATTEMPTS) {
           console.log('[TLM][Safari Mobile] ⚠️ Max popup attempts reached (' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS + ') - showing notification');
@@ -495,9 +511,10 @@ function setKendoLicense() {
           return null;
         }
 
-        // Increment attempt counter and save to localStorage
+        // Increment attempt counter and save to sessionStorage (not localStorage)
         this._safariPopupAttempts++;
-        localStorage.setItem('tlm_safari_popup_attempts', this._safariPopupAttempts.toString());
+        sessionStorage.setItem('tlm_safari_popup_attempts', this._safariPopupAttempts.toString());
+        localStorage.setItem('tlm_safari_last_attempt_time', now.toString());
         console.log('[TLM][Safari Mobile] 🔄 Popup attempt #' + this._safariPopupAttempts + '/' + this.MAX_SAFARI_POPUP_ATTEMPTS);
 
         this._authenticationInProgress = true;
@@ -1526,7 +1543,7 @@ function setKendoLicense() {
             background: #f3f2f1;
             border-radius: 12px;
             padding: 16px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
           ">
             <div style="
               font-size: 13px;
@@ -1560,7 +1577,8 @@ function setKendoLicense() {
                   font-size: 14px;
                   color: #323130;
                   line-height: 1.5;
-                ">เปิด <strong>การตั้งค่า</strong> บนเครื่องของคุณ</div>
+                ">เปิดแอป <strong>การตั้งค่า (Settings)</strong> บนไอโฟนของคุณ<br>
+                <span style="font-size: 12px; color: #605e5c;">(ไอคอนรูปเฟือง สีเทา)</span></div>
               </div>
             </div>
 
@@ -1588,11 +1606,12 @@ function setKendoLicense() {
                   font-size: 14px;
                   color: #323130;
                   line-height: 1.5;
-                ">เลือก <strong>Safari</strong></div>
+                ">เลื่อนลงมาและเลือก <strong>Safari</strong><br>
+                <span style="font-size: 12px; color: #605e5c;">(สำหรับ Chrome หรือ Edge ให้เลือกเบราว์เซอร์ที่คุณใช้งาน)</span></div>
               </div>
             </div>
 
-            <div>
+            <div style="margin-bottom: 10px;">
               <div style="
                 display: flex;
                 align-items: start;
@@ -1616,8 +1635,66 @@ function setKendoLicense() {
                   font-size: 14px;
                   color: #323130;
                   line-height: 1.5;
-                "><strong>ปิด</strong> การบล็อกหน้าต่างป๊อปอัพ<br>
-                <span style="font-size: 13px; color: #605e5c;">(Block Pop-ups)</span></div>
+                ">ค้นหาและ <strong>ปิด</strong> "ปิดกั้นป๊อปอัพ"<br>
+                <span style="font-size: 12px; color: #605e5c;">(Block Pop-ups) เปลี่ยนสวิตช์จากสีเขียวเป็นสีเทา</span></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="
+                display: flex;
+                align-items: start;
+                gap: 10px;
+              ">
+                <div style="
+                  background: #0078d4;
+                  color: white;
+                  width: 22px;
+                  height: 22px;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 12px;
+                  font-weight: 700;
+                  flex-shrink: 0;
+                  margin-top: 1px;
+                ">4</div>
+                <div style="
+                  font-size: 14px;
+                  color: #323130;
+                  line-height: 1.5;
+                ">กลับมาที่หน้านี้และกดปุ่มด้านล่าง</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- NEW: Important Remark for Return Users -->
+          <div style="
+            background: #fff4ce;
+            border-left: 4px solid #ffb900;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+          ">
+            <div style="
+              display: flex;
+              align-items: start;
+              gap: 10px;
+            ">
+              <div style="
+                color: #ffb900;
+                font-size: 18px;
+                flex-shrink: 0;
+              ">💡</div>
+              <div style="
+                font-size: 13px;
+                color: #323130;
+                line-height: 1.5;
+              ">
+                <strong>หมายเหตุ:</strong> หากคุณตั้งค่าเรียบร้อยแล้วแต่ยังเห็นหน้านี้อยู่ 
+                ให้กดปุ่ม "เข้าสู่ระบบ" ด้านล่างอีกครั้ง 
+                ระบบจะนำคุณไปยังหน้าล็อกอินโดยอัตโนมัติ
               </div>
             </div>
           </div>
@@ -1637,7 +1714,7 @@ function setKendoLicense() {
             box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
             letter-spacing: -0.2px;
           ">
-            ตั้งค่าเรียบร้อยแล้ว กดเพื่อเข้าสู่ระบบ
+            เข้าสู่ระบบ
           </button>
 
           <div style="
@@ -1647,8 +1724,8 @@ function setKendoLicense() {
             color: #8a8886;
             line-height: 1.4;
           ">
-            หลังจากตั้งค่าเรียบร้อย กดปุ่มด้านบน<br>
-            ระบบจะนำคุณไปยังหน้าเข้าสู่ระบบ
+            ใช้ได้กับ Safari, Chrome และ Edge บน iOS<br>
+            หากพบปัญหา กรุณาติดต่อ IT Support
           </div>
         </div>
       `;
@@ -1656,19 +1733,93 @@ function setKendoLicense() {
       document.body.appendChild(noti);
       console.log('[TLM][Safari Mobile] ✅ Notification element appended to body');
 
-      // Refresh button handler - Reset attempts before reload
-      document.getElementById('tlm-safari-refresh-btn').addEventListener('click', () => {
-        console.log('[TLM][Safari Mobile] Refresh clicked - resetting popup attempts counter');
-        localStorage.removeItem('tlm_safari_popup_attempts');
+      // 🔥 CRITICAL FIX: Login button handler - Trigger authentication DIRECTLY (no reload)
+      // This fixes the infinite loop issue where button reload → no token → shows notification again
+      document.getElementById('tlm-safari-refresh-btn').addEventListener('click', async () => {
+        console.log('[TLM][Safari Mobile] 🔐 Login button clicked');
 
-        // เพิ่ม visual feedback
+        // Visual feedback
         const btn = document.getElementById('tlm-safari-refresh-btn');
-        btn.innerHTML = 'กำลังเข้าสู่ระบบ...';
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<span style="opacity: 0.7;">⏳ กำลังเข้าสู่ระบบ...</span>';
+        btn.disabled = true;
         btn.style.opacity = '0.7';
+        btn.style.cursor = 'not-allowed';
 
-        setTimeout(() => {
-          location.reload();
-        }, 300);
+        try {
+          // CRITICAL: Reset attempt counter BEFORE calling auth (allows retry)
+          console.log('[TLM][Safari Mobile] Resetting popup attempt counter');
+          tlm.global._safariPopupAttempts = 0;
+          sessionStorage.removeItem('tlm_safari_popup_attempts'); // Changed from localStorage
+          localStorage.removeItem('tlm_safari_last_attempt_time');
+
+          // CRITICAL: Set flag to prevent duplicate notification
+          tlm.global._showingPopupGuidance = false;
+
+          // CRITICAL FIX: Call authentication DIRECTLY instead of location.reload()
+          // This allows immediate authentication without page reload
+          console.log('[TLM][Safari Mobile] Calling _performSafariPopupLogin() directly...');
+          const success = await tlm.global._performSafariPopupLogin();
+
+          if (success) {
+            console.log('[TLM][Safari Mobile] ✅ Authentication successful via button');
+            // Notification hides automatically in _performSafariPopupLogin
+            // No reload needed - token is ready immediately for AJAX calls
+          } else {
+            // Authentication failed (user cancelled or popup blocked)
+            console.log('[TLM][Safari Mobile] ⚠️ Authentication failed or cancelled');
+
+            // Restore button state
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+
+            // Check if max attempts reached after this failure
+            if (tlm.global._safariPopupAttempts >= tlm.global.MAX_SAFARI_POPUP_ATTEMPTS) {
+              btn.innerHTML = '❌ ไม่สามารถเข้าสู่ระบบได้';
+              btn.style.background = '#d13438';
+
+              // Show error in notification
+              const noti = document.getElementById('tlm-safari-noti');
+              if (noti) {
+                const contentDiv = noti.querySelector('[style*="padding: 24px 20px"]');
+                if (contentDiv) {
+                  const errorDiv = document.createElement('div');
+                  errorDiv.style.cssText = `
+                    background: #fde7e9;
+                    border-left: 4px solid #d13438;
+                    border-radius: 4px;
+                    padding: 12px 16px;
+                    margin-top: 16px;
+                    font-size: 13px;
+                    color: #323130;
+                  `;
+                  errorDiv.innerHTML = `
+                    <strong>ไม่สามารถเข้าสู่ระบบได้</strong><br>
+                    กรุณาลองรีเฟรชหน้าเว็บ หรือติดต่อ IT Support
+                  `;
+                  contentDiv.appendChild(errorDiv);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[TLM][Safari Mobile] ❌ Button handler error:', error);
+
+          // Restore button state on error
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+
+          // Show error message
+          tlm.global.showAlertDialog({
+            title: "เกิดข้อผิดพลาด",
+            content: "ไม่สามารถเริ่มกระบวนการล็อกอินได้<br>กรุณาลองใหม่อีกครั้งหรือรีเฟรชหน้าเว็บ",
+            isError: true
+          });
+        }
       });
 
       console.log('[TLM][Safari Mobile] 📢 Safari Mobile setup notification displayed successfully');
@@ -1711,8 +1862,9 @@ function setKendoLicense() {
         console.log('[TLM][Safari Mobile] Valid token found - hiding notification');
         this._hideSafariMobileSetupNotification();
 
-        // Reset popup attempts counter เมื่อมี token
-        localStorage.removeItem('tlm_safari_popup_attempts');
+        // Reset popup attempts counter เมื่อมี token (sessionStorage)
+        sessionStorage.removeItem('tlm_safari_popup_attempts');
+        localStorage.removeItem('tlm_safari_last_attempt_time');
       }
     },
 
@@ -1776,12 +1928,23 @@ function setKendoLicense() {
         const popupResult = await this.msalInstance.loginPopup(loginRequest);
 
         if (popupResult && popupResult.accessToken) {
-          console.log('[TLM][Safari Mobile] ✅ Token acquired successfully');
+          // 🔒 SECURITY: Verify popup origin to prevent phishing attacks
+          const expectedOrigin = 'https://login.microsoftonline.com';
+          if (popupResult.authority && !popupResult.authority.startsWith(expectedOrigin)) {
+            console.error('[TLM][Safari Mobile] 🚨 SECURITY WARNING: Unexpected popup origin:', popupResult.authority);
+            console.error('[TLM][Safari Mobile] Expected:', expectedOrigin);
+            console.error('[TLM][Safari Mobile] Received:', popupResult.authority);
+            // Don't use the token - potential phishing attempt
+            return false;
+          }
 
-          // Reset popup attempt counter on success (both memory and localStorage)
+          console.log('[TLM][Safari Mobile] ✅ Token acquired successfully from verified origin');
+
+          // Reset popup attempt counter on success (both memory and sessionStorage)
           this._safariPopupAttempts = 0;
-          localStorage.removeItem('tlm_safari_popup_attempts');
-          console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter and cleared localStorage');
+          sessionStorage.removeItem('tlm_safari_popup_attempts');
+          localStorage.removeItem('tlm_safari_last_attempt_time');
+          console.log('[TLM][Safari Mobile] ♻️ Reset popup attempt counter and cleared attempt history');
 
           // Set active account
           this.msalInstance.setActiveAccount(popupResult.account);
